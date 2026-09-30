@@ -2,7 +2,9 @@
 security plugin for WordPress
 # IronVeil Security: design and test notes (current: v1.2.1)
 Author: Jassim T Mohammad.
-
+Plugin designed Sep,30,2026
+All Rights Reserved. 
+---------------------
 ## Architecture
 - `ironveil-security.php` bootstraps and runs `Firewall::boot()` immediately. An optional MU loader (`0-ironveil-firewall.php`) runs it even earlier.
 - Firewall: zero extra DB queries per request. Settings and the blocklist cache are autoloaded options. Blocklist ranges are stored as fixed-width hex so strcmp can compare them.
