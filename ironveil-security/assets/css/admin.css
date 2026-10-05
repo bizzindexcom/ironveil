@@ -113,3 +113,23 @@
 .ironveil .iv-diff { max-height: 70vh; overflow: auto; border: 1px solid var(--iv-line); border-radius: 8px; }
 .ironveil .iv-diff table.diff { width: 100%; font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 12px; }
 .ironveil .iv-diff td { white-space: pre-wrap; word-break: break-all; }
+
+/* ---- 1.3.0: bulk actions, verification, server scan, bug reports ---- */
+.ironveil .iv-bulkbar{display:flex;flex-wrap:wrap;align-items:center;gap:.5rem;margin:.75rem 0}
+.ironveil .iv-bulkbar select{max-width:100%}
+.ironveil .iv-fallback{font-size:12px;color:#50575e}
+.ironveil .iv-quickselect{flex-basis:100%;font-size:12px;color:#50575e}
+.ironveil .iv-quickselect .button-link{font-size:12px;margin-right:.35rem}
+.ironveil .iv-selected{font-size:12px;color:#2271b1;font-weight:600}
+.ironveil .iv-findings .check-column,.ironveil .iv-table .check-column{width:2.2em;padding:8px 0 0 8px;vertical-align:top}
+.ironveil .iv-findings .check-column input,.ironveil .iv-table .check-column input{margin:0}
+.ironveil .iv-plan{color:#50575e}
+.ironveil .iv-plan-none{color:#996800}
+.ironveil .iv-actions button{margin:0 .25rem .25rem 0}
+.ironveil .iv-verified{display:flex;align-items:center;gap:.4rem;margin:.5rem 0;font-size:12px;color:#50575e}
+.ironveil .iv-diag{max-height:28rem;overflow:auto;white-space:pre-wrap;word-break:break-word;font-size:11px}
+.ironveil .iv-bugform textarea,.ironveil .iv-bugform input[type=text]{width:100%}
+.ironveil .iv-server .iv-fix code{white-space:normal;word-break:break-word}
+.notice .iv-notice-list{margin:.25rem 0 .75rem 1.25rem;list-style:disc}
+.notice .iv-notice-list li{margin:.1rem 0;word-break:break-word}
+@media (max-width:782px){.ironveil .iv-bulkbar{flex-direction:column;align-items:stretch}.ironveil .iv-actions .button{margin-bottom:.35rem}}

@@ -3,13 +3,75 @@
 	'use strict';
 	var cfg = window.IronVeil || {};
 
-	// Confirm destructive forms.
+	var i18n = cfg.i18n || {};
+
+	// Confirm destructive forms / buttons, and bulk actions (with the number of selected items).
 	document.addEventListener( 'submit', function ( e ) {
 		var f = e.target;
-		if ( f && f.getAttribute && f.getAttribute( 'data-confirm' ) && ! window.confirm( ( cfg.i18n && cfg.i18n.confirm ) || 'Are you sure?' ) ) {
+		var btn = e.submitter || null;
+		if ( ! f || ! f.getAttribute ) {
+			return;
+		}
+		if ( btn && btn.getAttribute( 'data-confirm' ) ) {
+			if ( ! window.confirm( i18n.confirm || 'Are you sure?' ) ) {
+				e.preventDefault();
+			}
+			return;
+		}
+		if ( f.getAttribute( 'data-confirm-bulk' ) && btn && btn.name === 'apply' ) {
+			var n = f.querySelectorAll( 'input[name="ids[]"]:checked' ).length;
+			if ( ! n ) {
+				e.preventDefault();
+				window.alert( i18n.noneChosen || 'Select at least one item first.' );
+				return;
+			}
+			var sel = f.querySelector( 'select' );
+			var label = sel ? sel.options[ sel.selectedIndex ].text : '';
+			if ( ! window.confirm( ( i18n.confirmBulk || 'Apply "%1$s" to %2$d selected item(s)?' ).replace( '%1$s', label ).replace( '%2$d', n ) ) ) {
+				e.preventDefault();
+			}
+			return;
+		}
+		if ( f.getAttribute( 'data-confirm' ) && ! window.confirm( i18n.confirm || 'Are you sure?' ) ) {
 			e.preventDefault();
 		}
 	}, true );
+
+	// Checkbox helpers for every bulk form: select all, quick-select by severity, live counter.
+	Array.prototype.forEach.call( document.querySelectorAll( 'form.iv-bulk' ), function ( form ) {
+		var boxes = Array.prototype.slice.call( form.querySelectorAll( 'input[name="ids[]"]' ) );
+		var all = form.querySelector( '.iv-check-all' );
+		var counter = form.querySelector( '.iv-selected' );
+		function update() {
+			var n = boxes.filter( function ( b ) { return b.checked; } ).length;
+			if ( counter ) {
+				counter.textContent = n ? ( i18n.selected || '%d selected' ).replace( '%d', n ) : '';
+			}
+			if ( all ) {
+				all.checked = n > 0 && n === boxes.length;
+				all.indeterminate = n > 0 && n < boxes.length;
+			}
+		}
+		if ( all ) {
+			all.addEventListener( 'change', function () {
+				boxes.forEach( function ( b ) { b.checked = all.checked; } );
+				update();
+			} );
+		}
+		boxes.forEach( function ( b ) { b.addEventListener( 'change', update ); } );
+		Array.prototype.forEach.call( form.querySelectorAll( '.iv-select' ), function ( link ) {
+			link.addEventListener( 'click', function () {
+				var want = link.getAttribute( 'data-sev' );
+				boxes.forEach( function ( b ) {
+					var sev = parseInt( b.getAttribute( 'data-sev' ), 10 ) || 0;
+					b.checked = 'all' === want ? true : ( 'none' === want ? false : sev >= parseInt( want, 10 ) );
+				} );
+				update();
+			} );
+		} );
+		update();
+	} );
+
 
 	var box = document.querySelector( '.iv-scan' );
 	if ( ! box ) {

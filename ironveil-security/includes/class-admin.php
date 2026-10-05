@@ -21,9 +21,10 @@ final class Admin {
 		add_action( is_multisite() ? 'network_admin_menu' : 'admin_menu', array( __CLASS__, 'menu' ) );
 		add_action( 'admin_enqueue_scripts', array( __CLASS__, 'assets' ) );
 		add_filter( 'plugin_action_links_' . IRONVEIL_BASENAME, array( __CLASS__, 'action_links' ) );
-		foreach ( array( 'save', 'block_add', 'block_remove', 'unblock_me', 'mu', 'export', 'import', 'issue', 'quarantine', 'sessions', 'reset', 'clamav_test', 'feed_update', 'license', 'original' ) as $a ) {
+		foreach ( array( 'save', 'block_add', 'block_remove', 'unblock_me', 'mu', 'export', 'import', 'issue', 'bulk', 'quarantine', 'sessions', 'reset', 'clamav_test', 'feed_update', 'license', 'original', 'server_scan', 'threat_update', 'bug_report', 'clear_errors' ) as $a ) {
 			add_action( 'admin_post_ironveil_' . $a, array( __CLASS__, 'post_' . $a ) );
 		}
+		add_filter( 'plugin_row_meta', array( __CLASS__, 'row_meta' ), 10, 2 );
 		add_action( 'wp_ajax_ironveil_scan', array( __CLASS__, 'ajax_scan' ) );
 		add_action( 'admin_notices', array( __CLASS__, 'notices' ) );
 		add_action( 'network_admin_notices', array( __CLASS__, 'notices' ) );
@@ -39,8 +40,10 @@ final class Admin {
 			self::SLUG . '-login'   => array( __( 'Login Security', 'ironveil-security' ), 'page_login' ),
 			self::SLUG . '-scanner' => array( __( 'Scanner', 'ironveil-security' ), 'page_scanner' ),
 			self::SLUG . '-hardening' => array( __( 'Hardening', 'ironveil-security' ), 'page_hardening' ),
+			self::SLUG . '-server'  => array( __( 'Server Scan', 'ironveil-security' ), 'page_server' ),
 			self::SLUG . '-log'     => array( __( 'Activity Log', 'ironveil-security' ), 'page_log' ),
 			self::SLUG . '-tools'   => array( __( 'Alerts & Tools', 'ironveil-security' ), 'page_tools' ),
+			self::SLUG . '-support' => array( __( 'Report a Bug', 'ironveil-security' ), 'page_support' ),
 			self::SLUG . '-license' => array( License::is_pro() ? __( 'License', 'ironveil-security' ) : __( 'Upgrade to Pro', 'ironveil-security' ), 'page_license' ),
 		);
 	}
@@ -75,6 +78,20 @@ final class Admin {
 	}
 
 	/**
+	 * "Report a bug" link on the Plugins screen.
+	 *
+	 * @param array  $meta Links.
+	 * @param string $file Plugin file.
+	 * @return array
+	 */
+	public static function row_meta( $meta, $file ) {
+		if ( IRONVEIL_BASENAME === $file && current_user_can( Plugin::cap() ) ) {
+			$meta[] = '<a href="' . esc_url( self::url( self::SLUG . '-support' ) ) . '">' . esc_html__( 'Report a bug', 'ironveil-security' ) . '</a>';
+		}
+		return $meta;
+	}
+
+	/**
 	 * @param string $page Page slug.
 	 * @param array  $args Query args.
 	 * @return string
@@ -100,7 +117,12 @@ final class Admin {
 				'ajax'  => admin_url( 'admin-ajax.php' ),
 				'nonce' => wp_create_nonce( 'ironveil_scan' ),
 				'i18n'  => array(
-					'confirm' => __( 'Are you sure?', 'ironveil-security' ),
+					'confirm'     => __( 'Are you sure?', 'ironveil-security' ),
+					/* translators: 1: action 2: count */
+					'confirmBulk' => __( 'Apply "%1$s" to %2$d selected item(s)?', 'ironveil-security' ),
+					'noneChosen'  => __( 'Select at least one item first.', 'ironveil-security' ),
+					/* translators: %d: count */
+					'selected'    => __( '%d selected', 'ironveil-security' ),
 					'stages'  => array(
 						'core_checksums'   => __( 'Fetching official core checksums', 'ironveil-security' ),
 						'plugin_checksums' => __( 'Fetching plugin checksums', 'ironveil-security' ),
@@ -124,6 +146,17 @@ final class Admin {
 	 * @param string $action Nonce action.
 	 */
 	private static function guard( $action ) {
+		self::guard_basic( $action );
+		// One identity verification covers every IronVeil action for the verified window.
+		Verify::require_verified( (string) wp_get_referer() );
+	}
+
+	/**
+	 * Capability + nonce only (actions that must work even when verification cannot).
+	 *
+	 * @param string $action Nonce action.
+	 */
+	private static function guard_basic( $action ) {
 		if ( ! current_user_can( Plugin::cap() ) ) {
 			wp_die( esc_html__( 'You do not have permission to do this.', 'ironveil-security' ), 403 );
 		}
@@ -145,16 +178,31 @@ final class Admin {
 	}
 
 	/**
-	 * Flash notices.
+	 * Flash notices. A message may be a string or a list of lines.
 	 */
 	public static function notices() {
 		$key = 'ironveil_notice_' . get_current_user_id();
 		$n   = get_transient( $key );
 		if ( is_array( $n ) ) {
 			delete_transient( $key );
-			printf( '<div class="notice notice-%1$s is-dismissible"><p>%2$s</p></div>', 'error' === $n[1] ? 'error' : 'success', esc_html( $n[0] ) );
+			$class = in_array( $n[1], array( 'error', 'warning' ), true ) ? $n[1] : 'success';
+			$lines = (array) $n[0];
+			echo '<div class="notice notice-' . esc_attr( $class ) . ' is-dismissible"><p>' . esc_html( (string) array_shift( $lines ) ) . '</p>';
+			if ( $lines ) {
+				echo '<ul class="iv-notice-list">';
+				foreach ( array_slice( $lines, 0, 40 ) as $l ) {
+					echo '<li>' . esc_html( (string) $l ) . '</li>';
+				}
+				echo '</ul>';
+			}
+			echo '</div>';
+		}
+		$screen = function_exists( 'get_current_screen' ) ? get_current_screen() : null;
+		if ( $screen && false !== strpos( (string) $screen->id, self::SLUG ) && Bug_Report::errors() && current_user_can( Plugin::cap() ) && false === strpos( (string) $screen->id, 'support' ) ) {
+			echo '<div class="notice notice-warning"><p><strong>IronVeil:</strong> ' . esc_html__( 'IronVeil recorded an internal error. Please send a bug report so it can be fixed.', 'ironveil-security' ) . ' <a class="button button-small" href="' . esc_url( self::url( self::SLUG . '-support' ) ) . '">' . esc_html__( 'Report a bug', 'ironveil-security' ) . '</a></p></div>';
 		}
 	}
+
 
 	/**
 	 * @param string $page Current slug.
@@ -172,6 +220,17 @@ final class Admin {
 			printf( '<a href="%1$s" class="%2$s"%4$s>%3$s</a>', esc_url( self::url( $slug ) ), $slug === $page ? 'is-active' : '', esc_html( $p[0] ), $slug === $page ? ' aria-current="page"' : '' );
 		}
 		echo '</nav>';
+		if ( Verify::required_for() ) {
+			$until = Verify::verified_until();
+			if ( $until ) {
+				echo '<div class="iv-verified"><span class="iv-pill iv-good">' . esc_html__( 'Verified', 'ironveil-security' ) . '</span> '
+					/* translators: %s: time span */
+					. esc_html( sprintf( __( 'Sensitive actions are unlocked for %s.', 'ironveil-security' ), human_time_diff( time(), $until ) ) ) . ' ';
+				echo '<form method="post" action="' . esc_url( admin_url( 'admin-post.php' ) ) . '" class="iv-inline">';
+				wp_nonce_field( 'ironveil_unverify' );
+				echo '<input type="hidden" name="action" value="ironveil_unverify"><button class="button-link">' . esc_html__( 'Lock now', 'ironveil-security' ) . '</button></form></div>';
+			}
+		}
 		if ( ! License::is_pro() && self::SLUG . '-license' !== $page ) {
 			echo '<div class="iv-banner iv-upsell">' . esc_html__( 'You are using IronVeil Free. Upgrade to Pro for the ClamAV antivirus engine, whole-server scanning, automatic signature updates, auto-quarantine & core repair, CVE vulnerability matching, country blocking, email alerts and extended protection.', 'ironveil-security' )
 				. ' <a class="button button-small" href="' . esc_url( self::url( self::SLUG . '-license' ) ) . '">' . esc_html__( 'Upgrade / enter license', 'ironveil-security' ) . '</a></div>';
@@ -361,6 +420,25 @@ final class Admin {
 		}
 		echo '<p class="description">' . esc_html__( 'Locked out? Add define( \'IRONVEIL_DISABLE_FIREWALL\', true ); to wp-config.php, log in, and remove your IP from the blocklist.', 'ironveil-security' ) . '</p></div>';
 
+		// Threat intelligence feeds.
+		$feeds = Threat_Feeds::state();
+		echo '<div class="iv-card"><h2>' . esc_html__( 'Threat intelligence feeds', 'ironveil-security' ) . '</h2>';
+		if ( ! $feeds && ! Settings::get( 'fw_threat_feeds' ) ) {
+			echo '<p>' . esc_html__( 'Off. Enable Spamhaus DROP below to block networks run by spammers and cyber-criminals before they reach WordPress.', 'ironveil-security' ) . '</p>';
+		} else {
+			echo '<table class="widefat striped iv-table"><tbody>';
+			foreach ( Threat_Feeds::sources() as $k => $src ) {
+				if ( ! isset( $feeds[ $k ] ) ) {
+					continue;
+				}
+				$f = $feeds[ $k ];
+				echo '<tr><th>' . esc_html( $src['label'] ) . '</th><td>' . esc_html( sprintf( /* translators: 1: count 2: time */ __( '%1$s networks · updated %2$s ago', 'ironveil-security' ), number_format_i18n( (int) ( $f['count'] ?? 0 ) ), human_time_diff( (int) ( $f['updated'] ?? $f['checked'] ?? time() ) ) ) ) . ( ! empty( $f['error'] ) ? ' <span class="iv-pill iv-bad">' . esc_html( $f['error'] ) . '</span>' : '' ) . '</td></tr>';
+			}
+			echo '</tbody></table>';
+			self::button_form( 'ironveil_threat_update', __( 'Update feeds now', 'ironveil-security' ) );
+		}
+		echo '</div>';
+
 		// Blocklist.
 		$paged = isset( $_GET['paged'] ) ? max( 1, absint( $_GET['paged'] ) ) : 1; // phpcs:ignore WordPress.Security.NonceVerification.Recommended
 		$list  = Blocklist::list_blocks( $paged, 50 );
@@ -423,83 +501,163 @@ final class Admin {
 		self::scan_widget();
 		echo '</div>';
 		self::engines_card();
-
-		echo '<div class="iv-card"><h2>' . esc_html__( 'Findings', 'ironveil-security' ) . '</h2><ul class="subsubsub">';
-		foreach ( array( 'open' => __( 'Open', 'ironveil-security' ), 'ignored' => __( 'Ignored', 'ironveil-security' ), 'fixed' => __( 'Fixed', 'ironveil-security' ), 'resolved' => __( 'Resolved', 'ironveil-security' ) ) as $k => $l ) {
-			echo '<li><a href="' . esc_url( self::url( $slug, array( 'status' => $k ) ) ) . '" class="' . ( $k === $status ? 'current' : '' ) . '">' . esc_html( $l ) . '</a> | </li>';
-		}
-		echo '</ul><br class="clear">';
-		$issues = Scanner::issues( $status );
-		if ( ! $issues ) {
-			echo '<p class="iv-empty">' . esc_html( 'open' === $status ? __( 'No open findings. 🎉', 'ironveil-security' ) : __( 'Nothing here.', 'ironveil-security' ) ) . '</p>';
-		} else {
-			echo '<table class="widefat striped iv-table"><thead><tr><th>' . esc_html__( 'Severity', 'ironveil-security' ) . '</th><th>' . esc_html__( 'Finding', 'ironveil-security' ) . '</th><th>' . esc_html__( 'Location', 'ironveil-security' ) . '</th><th>' . esc_html__( 'Actions', 'ironveil-security' ) . '</th></tr></thead><tbody>';
-			foreach ( $issues as $i ) {
-				$data = json_decode( (string) $i->data, true );
-				$sev  = array( 1 => 'low', 2 => 'medium', 3 => 'high', 4 => 'critical' )[ (int) $i->severity ] ?? 'low';
-				echo '<tr><td><span class="iv-pill iv-sev-' . esc_attr( $sev ) . '">' . esc_html( Scanner::severity_label( $i->severity ) ) . '</span></td><td><strong>' . esc_html( $i->detail ) . '</strong>';
-				if ( ! empty( $data['snippet'] ) ) {
-					echo '<details><summary>' . esc_html__( 'Matched code', 'ironveil-security' ) . '</summary><pre class="iv-code">' . esc_html( $data['snippet'] ) . '</pre></details>';
-				}
-				if ( ! empty( $data['refs'] ) ) {
-					echo '<br><small>' . esc_html( implode( ', ', (array) $data['refs'] ) ) . '</small>';
-				}
-				if ( ! empty( $data['fixed_in'] ) ) {
-					echo '<br><small>' . esc_html( sprintf( /* translators: %s: version */ __( 'Fixed in %s', 'ironveil-security' ), $data['fixed_in'] ) ) . '</small>';
-				}
-				echo '</td><td><code class="iv-path">' . esc_html( (string) $i->path ) . '</code><br><small>' . esc_html( sprintf( /* translators: %s: time */ __( 'seen %s ago', 'ironveil-security' ), human_time_diff( (int) $i->updated ) ) ) . '</small></td><td class="iv-actions">';
-				$acts = array();
-				if ( 'open' === $status ) {
-					if ( isset( $data['fixable'] ) && 'repair' === $data['fixable'] ) {
-						$acts['repair'] = __( 'Repair', 'ironveil-security' );
-					}
-					if ( isset( $data['fixable'] ) && 'quarantine' === $data['fixable'] ) {
-						$acts['quarantine'] = __( 'Quarantine', 'ironveil-security' );
-					}
-					$acts['ignore'] = __( 'Ignore', 'ironveil-security' );
-				} elseif ( 'ignored' === $status ) {
-					$acts['reopen'] = __( 'Stop ignoring', 'ironveil-security' );
-				}
-				foreach ( $acts as $a => $label ) {
-					echo '<form method="post" action="' . esc_url( admin_url( 'admin-post.php' ) ) . '"' . ( in_array( $a, array( 'repair', 'quarantine' ), true ) ? ' data-confirm="1"' : '' ) . '>';
-					wp_nonce_field( 'ironveil_issue' );
-					echo '<input type="hidden" name="action" value="ironveil_issue"><input type="hidden" name="id" value="' . (int) $i->id . '"><input type="hidden" name="do" value="' . esc_attr( $a ) . '"><button class="button button-small' . ( 'ignore' === $a ? '' : ' button-primary' ) . '">' . esc_html( $label ) . '</button></form>';
-				}
-				if ( 'open' === $status && isset( $data['fixable'] ) && 'repair' === $data['fixable'] ) {
-					echo '<a class="button button-small" href="' . esc_url( wp_nonce_url( self::url( $slug, array( 'diff' => (int) $i->id ) ), 'ironveil_diff_' . (int) $i->id ) ) . '">' . esc_html__( 'View changes', 'ironveil-security' ) . '</a> ';
-					echo '<form method="post" action="' . esc_url( admin_url( 'admin-post.php' ) ) . '">';
-					wp_nonce_field( 'ironveil_original' );
-					echo '<input type="hidden" name="action" value="ironveil_original"><input type="hidden" name="id" value="' . (int) $i->id . '"><button class="button button-small">' . esc_html__( 'Download original', 'ironveil-security' ) . '</button></form>';
-				}
-				if ( isset( $data['post_id'] ) ) {
-					echo '<a class="button button-small" href="' . esc_url( (string) get_edit_post_link( (int) $data['post_id'] ) ) . '">' . esc_html__( 'Edit', 'ironveil-security' ) . '</a>';
-				}
-				echo '</td></tr>';
-			}
-			echo '</tbody></table>';
-		}
-		echo '</div>';
-
-		$q = Quarantine::all();
-		echo '<div class="iv-card"><h2>' . esc_html__( 'Quarantine', 'ironveil-security' ) . ' <span class="iv-count">' . count( $q ) . '</span></h2>';
-		if ( $q ) {
-			echo '<table class="widefat striped iv-table"><thead><tr><th>' . esc_html__( 'Original file', 'ironveil-security' ) . '</th><th>' . esc_html__( 'Reason', 'ironveil-security' ) . '</th><th>' . esc_html__( 'When', 'ironveil-security' ) . '</th><th></th></tr></thead><tbody>';
-			foreach ( array_reverse( $q, true ) as $id => $item ) {
-				echo '<tr><td><code class="iv-path">' . esc_html( $item['path'] ) . '</code>' . ( empty( $item['removed'] ) ? ' <small>(' . esc_html__( 'backup', 'ironveil-security' ) . ')</small>' : '' ) . '</td><td>' . esc_html( $item['reason'] ) . '</td><td>' . esc_html( human_time_diff( (int) $item['time'] ) ) . '</td><td class="iv-actions">';
-				foreach ( array( 'restore' => __( 'Restore', 'ironveil-security' ), 'delete' => __( 'Delete permanently', 'ironveil-security' ) ) as $a => $label ) {
-					echo '<form method="post" action="' . esc_url( admin_url( 'admin-post.php' ) ) . '" data-confirm="1">';
-					wp_nonce_field( 'ironveil_quarantine' );
-					echo '<input type="hidden" name="action" value="ironveil_quarantine"><input type="hidden" name="id" value="' . esc_attr( $id ) . '"><input type="hidden" name="do" value="' . esc_attr( $a ) . '"><button class="button button-small' . ( 'delete' === $a ? ' button-link-delete' : '' ) . '">' . esc_html( $label ) . '</button></form>';
-				}
-				echo '</td></tr>';
-			}
-			echo '</tbody></table>';
-		} else {
-			echo '<p>' . esc_html__( 'Quarantine is empty.', 'ironveil-security' ) . '</p>';
-		}
-		echo '</div>';
+		self::findings_card( $slug, $status );
+		self::quarantine_card();
 		self::settings_form( 'scanner', $slug );
 		self::footer();
+	}
+
+	/**
+	 * Findings table with checkboxes and bulk actions.
+	 *
+	 * @param string $slug   Page slug (redirect target).
+	 * @param string $status Status tab.
+	 * @param string $filter Only server_ findings ('server') or everything ('').
+	 */
+	private static function findings_card( $slug, $status, $filter = '' ) {
+		$counts = array();
+		foreach ( array( 'open', 'ignored', 'fixed', 'resolved' ) as $k ) {
+			$counts[ $k ] = count( self::filter_issues( Scanner::issues( $k, 1000 ), $filter ) );
+		}
+		echo '<div class="iv-card"><h2>' . esc_html( 'server' === $filter ? __( 'Server findings', 'ironveil-security' ) : __( 'Findings', 'ironveil-security' ) ) . '</h2><ul class="subsubsub">';
+		$tabs = array(
+			'open'     => __( 'Open', 'ironveil-security' ),
+			'ignored'  => __( 'Ignored', 'ironveil-security' ),
+			'fixed'    => __( 'Fixed', 'ironveil-security' ),
+			'resolved' => __( 'Resolved', 'ironveil-security' ),
+		);
+		$last = array_key_last( $tabs );
+		foreach ( $tabs as $k => $l ) {
+			echo '<li><a href="' . esc_url( self::url( $slug, array( 'status' => $k ) ) ) . '" class="' . ( $k === $status ? 'current' : '' ) . '"' . ( $k === $status ? ' aria-current="page"' : '' ) . '>' . esc_html( $l ) . ' <span class="count">(' . (int) $counts[ $k ] . ')</span></a>' . ( $k === $last ? '' : ' |' ) . '</li>';
+		}
+		echo '</ul><br class="clear">';
+		$issues = self::filter_issues( Scanner::issues( $status, 500 ), $filter );
+		if ( ! $issues ) {
+			echo '<p class="iv-empty">' . esc_html( 'open' === $status ? __( 'No open findings. 🎉', 'ironveil-security' ) : __( 'Nothing here.', 'ironveil-security' ) ) . '</p></div>';
+			return;
+		}
+		$bulk_actions = 'open' === $status
+			? array(
+				'clean'      => __( 'Clean (apply the recommended fix)', 'ironveil-security' ),
+				'quarantine' => __( 'Quarantine files', 'ironveil-security' ),
+				'ignore'     => __( 'Ignore', 'ironveil-security' ),
+			)
+			: ( 'ignored' === $status ? array( 'reopen' => __( 'Stop ignoring', 'ironveil-security' ) ) : array() );
+
+		echo '<form method="post" action="' . esc_url( admin_url( 'admin-post.php' ) ) . '" class="iv-bulk" data-confirm-bulk="1">';
+		wp_nonce_field( 'ironveil_bulk' );
+		echo '<input type="hidden" name="action" value="ironveil_bulk"><input type="hidden" name="ironveil_slug" value="' . esc_attr( $slug ) . '"><input type="hidden" name="status" value="' . esc_attr( $status ) . '">';
+		if ( $bulk_actions ) {
+			echo '<div class="iv-bulkbar"><label class="screen-reader-text" for="iv-bulk-action">' . esc_html__( 'Bulk action', 'ironveil-security' ) . '</label><select name="bulk_action" id="iv-bulk-action">';
+			foreach ( $bulk_actions as $a => $l ) {
+				echo '<option value="' . esc_attr( $a ) . '">' . esc_html( $l ) . '</option>';
+			}
+			echo '</select> ';
+			if ( 'open' === $status ) {
+				echo '<label class="iv-fallback"><input type="checkbox" name="fallback" value="1"> ' . esc_html__( 'If a file cannot be cleaned safely, quarantine it instead', 'ironveil-security' ) . '</label> ';
+			}
+			echo '<button type="submit" class="button button-primary" name="apply" value="1">' . esc_html__( 'Apply to selected', 'ironveil-security' ) . '</button> <span class="iv-selected" aria-live="polite"></span>';
+			echo '<div class="iv-quickselect"><span>' . esc_html__( 'Select:', 'ironveil-security' ) . '</span> ';
+			foreach ( array( 'all' => __( 'All', 'ironveil-security' ), '4' => __( 'Critical', 'ironveil-security' ), '3' => __( 'High+', 'ironveil-security' ), '2' => __( 'Medium+', 'ironveil-security' ), 'none' => __( 'None', 'ironveil-security' ) ) as $k => $l ) {
+				echo '<button type="button" class="button-link iv-select" data-sev="' . esc_attr( (string) $k ) . '">' . esc_html( $l ) . '</button> ';
+			}
+			echo '</div></div>';
+		}
+		echo '<table class="widefat striped iv-table iv-findings"><thead><tr>';
+		if ( $bulk_actions ) {
+			echo '<td class="check-column"><input type="checkbox" class="iv-check-all" aria-label="' . esc_attr__( 'Select all', 'ironveil-security' ) . '"></td>';
+		}
+		echo '<th>' . esc_html__( 'Severity', 'ironveil-security' ) . '</th><th>' . esc_html__( 'Finding', 'ironveil-security' ) . '</th><th>' . esc_html__( 'Location', 'ironveil-security' ) . '</th><th>' . esc_html__( 'Actions', 'ironveil-security' ) . '</th></tr></thead><tbody>';
+		foreach ( $issues as $i ) {
+			$data = json_decode( (string) $i->data, true );
+			$data = is_array( $data ) ? $data : array();
+			$sev  = array( 1 => 'low', 2 => 'medium', 3 => 'high', 4 => 'critical' )[ (int) $i->severity ] ?? 'low';
+			$plan = 'open' === $status ? Cleaner::plan( $i ) : 'none';
+			echo '<tr>';
+			if ( $bulk_actions ) {
+				echo '<th scope="row" class="check-column"><input type="checkbox" name="ids[]" value="' . (int) $i->id . '" data-sev="' . (int) $i->severity . '" aria-label="' . esc_attr__( 'Select finding', 'ironveil-security' ) . '"></th>';
+			}
+			echo '<td><span class="iv-pill iv-sev-' . esc_attr( $sev ) . '">' . esc_html( Scanner::severity_label( $i->severity ) ) . '</span></td><td><strong>' . esc_html( $i->detail ) . '</strong>';
+			if ( ! empty( $data['snippet'] ) ) {
+				echo '<details><summary>' . esc_html__( 'Matched code', 'ironveil-security' ) . '</summary><pre class="iv-code">' . esc_html( $data['snippet'] ) . '</pre></details>';
+			}
+			if ( ! empty( $data['refs'] ) ) {
+				echo '<br><small>' . esc_html( implode( ', ', (array) $data['refs'] ) ) . '</small>';
+			}
+			if ( ! empty( $data['fixed_in'] ) ) {
+				echo '<br><small>' . esc_html( sprintf( /* translators: %s: version */ __( 'Fixed in %s', 'ironveil-security' ), $data['fixed_in'] ) ) . '</small>';
+			}
+			if ( 'open' === $status ) {
+				echo '<br><small class="iv-plan iv-plan-' . esc_attr( $plan ) . '">' . esc_html( sprintf( /* translators: %s: what Clean does */ __( 'Clean: %s', 'ironveil-security' ), Cleaner::plan_label( $plan ) ) ) . '</small>';
+			}
+			echo '</td><td><code class="iv-path">' . esc_html( (string) $i->path ) . '</code><br><small>' . esc_html( sprintf( /* translators: %s: time */ __( 'seen %s ago', 'ironveil-security' ), human_time_diff( (int) $i->updated ) ) ) . '</small></td><td class="iv-actions">';
+			if ( 'open' === $status ) {
+				if ( 'none' !== $plan ) {
+					echo '<button type="submit" class="button button-small button-primary" name="single" value="' . (int) $i->id . '|clean" data-confirm="1">' . esc_html__( 'Clean', 'ironveil-security' ) . '</button> ';
+				}
+				if ( Cleaner::is_file_path( (string) $i->path ) && 'quarantine' !== $plan ) {
+					echo '<button type="submit" class="button button-small" name="single" value="' . (int) $i->id . '|quarantine" data-confirm="1">' . esc_html__( 'Quarantine', 'ironveil-security' ) . '</button> ';
+				}
+				echo '<button type="submit" class="button button-small" name="single" value="' . (int) $i->id . '|ignore">' . esc_html__( 'Ignore', 'ironveil-security' ) . '</button> ';
+				if ( 'repair' === $plan ) {
+					echo '<a class="button button-small" href="' . esc_url( wp_nonce_url( self::url( self::SLUG . '-scanner', array( 'diff' => (int) $i->id ) ), 'ironveil_diff_' . (int) $i->id ) ) . '">' . esc_html__( 'View changes', 'ironveil-security' ) . '</a> ';
+					echo '<a class="button button-small" href="' . esc_url( wp_nonce_url( add_query_arg( array( 'action' => 'ironveil_original', 'id' => (int) $i->id ), admin_url( 'admin-post.php' ) ), 'ironveil_original' ) ) . '">' . esc_html__( 'Download original', 'ironveil-security' ) . '</a> ';
+				}
+			} elseif ( 'ignored' === $status ) {
+				echo '<button type="submit" class="button button-small" name="single" value="' . (int) $i->id . '|reopen">' . esc_html__( 'Stop ignoring', 'ironveil-security' ) . '</button> ';
+			}
+			if ( isset( $data['post_id'] ) ) {
+				echo '<a class="button button-small" href="' . esc_url( (string) get_edit_post_link( (int) $data['post_id'] ) ) . '">' . esc_html__( 'Edit', 'ironveil-security' ) . '</a>';
+			}
+			echo '</td></tr>';
+		}
+		echo '</tbody></table></form>';
+		echo '<p class="description">' . esc_html__( 'Clean picks the safest fix for each finding: official copies for WordPress and plugin files, quarantine for files that are malware as a whole, surgical removal of injected code (with a backup in the quarantine) for your own theme and plugin files, script removal for posts (a revision is kept) and updates for vulnerable components. Everything that changes a file can be undone from the quarantine.', 'ironveil-security' ) . '</p></div>';
+	}
+
+	/**
+	 * Split findings into server / other.
+	 *
+	 * @param array  $issues Rows.
+	 * @param string $filter 'server' or ''.
+	 * @return array
+	 */
+	private static function filter_issues( array $issues, $filter ) {
+		if ( 'server' !== $filter ) {
+			return $issues;
+		}
+		return array_values(
+			array_filter(
+				$issues,
+				static function ( $i ) {
+					return 0 === strpos( (string) $i->type, 'server_' );
+				}
+			)
+		);
+	}
+
+	/**
+	 * Quarantine list with checkboxes.
+	 */
+	private static function quarantine_card() {
+		$q = Quarantine::all();
+		echo '<div class="iv-card"><h2>' . esc_html__( 'Quarantine', 'ironveil-security' ) . ' <span class="iv-count">' . count( $q ) . '</span></h2>';
+		if ( ! $q ) {
+			echo '<p>' . esc_html__( 'Quarantine is empty.', 'ironveil-security' ) . '</p></div>';
+			return;
+		}
+		echo '<form method="post" action="' . esc_url( admin_url( 'admin-post.php' ) ) . '" class="iv-bulk" data-confirm-bulk="1">';
+		wp_nonce_field( 'ironveil_quarantine' );
+		echo '<input type="hidden" name="action" value="ironveil_quarantine">';
+		echo '<div class="iv-bulkbar"><select name="do"><option value="restore">' . esc_html__( 'Restore to original location', 'ironveil-security' ) . '</option><option value="delete">' . esc_html__( 'Delete permanently', 'ironveil-security' ) . '</option></select> <button type="submit" class="button" name="apply" value="1">' . esc_html__( 'Apply to selected', 'ironveil-security' ) . '</button> <span class="iv-selected" aria-live="polite"></span></div>';
+		echo '<table class="widefat striped iv-table"><thead><tr><td class="check-column"><input type="checkbox" class="iv-check-all" aria-label="' . esc_attr__( 'Select all', 'ironveil-security' ) . '"></td><th>' . esc_html__( 'Original file', 'ironveil-security' ) . '</th><th>' . esc_html__( 'Reason', 'ironveil-security' ) . '</th><th>' . esc_html__( 'When', 'ironveil-security' ) . '</th><th></th></tr></thead><tbody>';
+		foreach ( array_reverse( $q, true ) as $id => $item ) {
+			echo '<tr><th scope="row" class="check-column"><input type="checkbox" name="ids[]" value="' . esc_attr( $id ) . '" data-sev="0"></th><td><code class="iv-path">' . esc_html( $item['path'] ) . '</code>' . ( empty( $item['removed'] ) ? ' <small>(' . esc_html__( 'backup', 'ironveil-security' ) . ')</small>' : '' ) . '</td><td>' . esc_html( $item['reason'] ) . '</td><td>' . esc_html( human_time_diff( (int) $item['time'] ) ) . '</td><td class="iv-actions">';
+			echo '<button type="submit" class="button button-small" name="single" value="' . esc_attr( $id ) . '|restore" data-confirm="1">' . esc_html__( 'Restore', 'ironveil-security' ) . '</button> ';
+			echo '<button type="submit" class="button button-small button-link-delete" name="single" value="' . esc_attr( $id ) . '|delete" data-confirm="1">' . esc_html__( 'Delete permanently', 'ironveil-security' ) . '</button>';
+			echo '</td></tr>';
+		}
+		echo '</tbody></table></form><p class="description">' . esc_html__( 'Backups are copies taken before IronVeil changed a file. Restoring a backup only works after the current file at that location has been removed or renamed.', 'ironveil-security' ) . '</p></div>';
 	}
 
 	/**
@@ -662,20 +820,105 @@ final class Admin {
 	public static function post_original() {
 		self::guard( 'ironveil_original' );
 		global $wpdb;
-		$row = $wpdb->get_row( $wpdb->prepare( 'SELECT path FROM ' . Scanner::issues_table() . ' WHERE id = %d', isset( $_POST['id'] ) ? absint( $_POST['id'] ) : 0 ) ); // phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared,WordPress.DB.DirectDatabaseQuery
+		$row = $wpdb->get_row( $wpdb->prepare( 'SELECT path FROM ' . Scanner::issues_table() . ' WHERE id = %d', isset( $_REQUEST['id'] ) ? absint( $_REQUEST['id'] ) : 0 ) ); // phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared,WordPress.DB.DirectDatabaseQuery
 		$body = $row ? Scanner::core_original( (string) $row->path ) : new \WP_Error( 'x', __( 'Finding not found.', 'ironveil-security' ) );
 		if ( is_wp_error( $body ) ) {
 			self::back( self::SLUG . '-scanner', $body->get_error_message(), 'error' );
 		}
 		nocache_headers();
 		header( 'Content-Type: application/octet-stream' );
+		header( 'X-Content-Type-Options: nosniff' );
 		header( 'Content-Disposition: attachment; filename="' . sanitize_file_name( basename( (string) $row->path ) ) . '"' );
 		header( 'Content-Length: ' . strlen( $body ) );
 		echo $body; // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- file download.
 		exit;
 	}
 
+	/**
+	 * Server security scan.
+	 */
+	public static function page_server() {
+		$slug   = self::SLUG . '-server';
+		$status = isset( $_GET['status'] ) ? sanitize_key( wp_unslash( $_GET['status'] ) ) : 'open'; // phpcs:ignore WordPress.Security.NonceVerification.Recommended
+		if ( ! in_array( $status, array( 'open', 'ignored', 'fixed', 'resolved' ), true ) ) {
+			$status = 'open';
+		}
+		self::header( $slug, __( 'Server Security Scan', 'ironveil-security' ) );
+		$r = Server_Scan::report();
+		echo '<div class="iv-card"><p>' . esc_html__( 'Audits the hosting environment that a file scan cannot see: PHP and database configuration, file permissions, exposed backups and logs, temporary-folder droppers, TLS certificate, security headers and exposed service ports.', 'ironveil-security' ) . '</p>';
+		echo '<p>' . ( $r ? esc_html( sprintf( /* translators: 1: time 2: seconds */ __( 'Last server scan %1$s ago (%2$s s).', 'ironveil-security' ), human_time_diff( (int) $r['time'] ), number_format_i18n( (float) $r['duration'], 1 ) ) ) : esc_html__( 'The server has not been scanned yet.', 'ironveil-security' ) ) . '</p>';
+		self::button_form( 'ironveil_server_scan', __( 'Scan the server now', 'ironveil-security' ) );
+		echo '</div>';
+		if ( $r ) {
+			$sections = array(
+				'php'      => __( 'PHP', 'ironveil-security' ),
+				'database' => __( 'Database', 'ironveil-security' ),
+				'files'    => __( 'Files & folders', 'ironveil-security' ),
+				'accounts' => __( 'Accounts & configuration', 'ironveil-security' ),
+				'http'     => __( 'Web server (HTTP)', 'ironveil-security' ),
+				'ports'    => __( 'Network', 'ironveil-security' ),
+			);
+			$order  = array( 'bad' => 0, 'warn' => 1, 'info' => 2, 'good' => 3 );
+			$labels = array(
+				'bad'  => __( 'Problem', 'ironveil-security' ),
+				'warn' => __( 'Warning', 'ironveil-security' ),
+				'info' => __( 'Info', 'ironveil-security' ),
+				'good' => __( 'OK', 'ironveil-security' ),
+			);
+			echo '<div class="iv-card"><h2>' . esc_html__( 'Report', 'ironveil-security' ) . '</h2><table class="widefat striped iv-table iv-server"><thead><tr><th>' . esc_html__( 'Area', 'ironveil-security' ) . '</th><th>' . esc_html__( 'Check', 'ironveil-security' ) . '</th><th>' . esc_html__( 'Result', 'ironveil-security' ) . '</th></tr></thead><tbody>';
+			$checks = (array) $r['checks'];
+			usort(
+				$checks,
+				static function ( $a, $b ) use ( $order ) {
+					return ( $order[ $a['status'] ] ?? 9 ) <=> ( $order[ $b['status'] ] ?? 9 );
+				}
+			);
+			foreach ( $checks as $c ) {
+				$tone = array( 'bad' => 'bad', 'warn' => 'warn', 'good' => 'good', 'info' => '' )[ $c['status'] ] ?? '';
+				echo '<tr><td>' . esc_html( $sections[ $c['section'] ] ?? $c['section'] ) . '</td><td><strong>' . esc_html( $c['label'] ) . '</strong>' . ( '' !== $c['detail'] ? '<br><small>' . esc_html( $c['detail'] ) . '</small>' : '' ) . ( '' !== $c['fix'] && in_array( $c['status'], array( 'bad', 'warn' ), true ) ? '<br><small class="iv-fix">' . esc_html__( 'Fix:', 'ironveil-security' ) . ' <code>' . esc_html( $c['fix'] ) . '</code></small>' : '' ) . '</td><td><span class="iv-pill' . ( $tone ? ' iv-' . esc_attr( $tone ) : '' ) . '">' . esc_html( $labels[ $c['status'] ] ?? $c['status'] ) . '</span></td></tr>';
+			}
+			echo '</tbody></table></div>';
+		}
+		self::findings_card( $slug, $status, 'server' );
+		self::settings_form( 'server', $slug );
+		self::footer();
+	}
+
+	/**
+	 * Bug report form.
+	 */
+	public static function page_support() {
+		$slug  = self::SLUG . '-support';
+		$user  = wp_get_current_user();
+		$draft = get_transient( 'ironveil_bug_draft_' . $user->ID );
+		$draft = is_array( $draft ) ? $draft : array();
+		self::header( $slug, __( 'Report a Bug', 'ironveil-security' ) );
+		echo '<div class="iv-cols"><div class="iv-card"><h2>' . esc_html__( 'Tell the developer what went wrong', 'ironveil-security' ) . '</h2>';
+		echo '<p>' . esc_html( sprintf( /* translators: %s: email */ __( 'Your report is emailed to the IronVeil developer at %s. Nothing is sent until you press Send.', 'ironveil-security' ), Bug_Report::RECIPIENT ) ) . '</p>';
+		echo '<form method="post" action="' . esc_url( admin_url( 'admin-post.php' ) ) . '" class="iv-form iv-bugform">';
+		wp_nonce_field( 'ironveil_bug_report' );
+		echo '<input type="hidden" name="action" value="ironveil_bug_report">';
+		echo '<p><label for="iv-bug-summary"><strong>' . esc_html__( 'Summary', 'ironveil-security' ) . '</strong></label><br><input type="text" id="iv-bug-summary" name="summary" class="large-text" maxlength="150" required value="' . esc_attr( (string) ( $draft['summary'] ?? '' ) ) . '" placeholder="' . esc_attr__( 'e.g. Scan stops at "Analysing files"', 'ironveil-security' ) . '"></p>';
+		echo '<p><label for="iv-bug-desc"><strong>' . esc_html__( 'What happened? What did you expect?', 'ironveil-security' ) . '</strong></label><br><textarea id="iv-bug-desc" name="description" rows="6" class="large-text" maxlength="5000" required>' . esc_textarea( (string) ( $draft['description'] ?? '' ) ) . '</textarea></p>';
+		echo '<p><label for="iv-bug-steps"><strong>' . esc_html__( 'Steps to reproduce (optional)', 'ironveil-security' ) . '</strong></label><br><textarea id="iv-bug-steps" name="steps" rows="4" class="large-text" maxlength="3000" placeholder="1. …&#10;2. …">' . esc_textarea( (string) ( $draft['steps'] ?? '' ) ) . '</textarea></p>';
+		echo '<p><label for="iv-bug-reply"><strong>' . esc_html__( 'Reply to', 'ironveil-security' ) . '</strong></label><br><input type="email" id="iv-bug-reply" name="reply_to" class="regular-text" value="' . esc_attr( (string) ( $draft['reply_to'] ?? $user->user_email ) ) . '"></p>';
+		echo '<p><label><input type="checkbox" name="include_diag" value="1" checked> ' . esc_html__( 'Include diagnostic information (shown on the right; secrets and personal data are removed)', 'ironveil-security' ) . '</label></p>';
+		echo '<p><label><input type="checkbox" name="consent" value="1" required> ' . esc_html( sprintf( /* translators: %s: email */ __( 'I agree to send this report, including my site address and the diagnostics I chose, to %s.', 'ironveil-security' ), Bug_Report::RECIPIENT ) ) . '</label></p>';
+		submit_button( __( 'Send bug report', 'ironveil-security' ), 'primary', 'submit', false );
+		if ( ! empty( $draft['mailto'] ) ) {
+			echo ' <a class="button" href="' . esc_attr( (string) $draft['mailto'] ) . '">' . esc_html__( 'Open in my email app', 'ironveil-security' ) . '</a>';
+		}
+		echo '</form></div>';
+		echo '<div class="iv-card"><h2>' . esc_html__( 'Diagnostic information', 'ironveil-security' ) . '</h2><p class="description">' . esc_html__( 'This exact text is added to your report when the box is ticked.', 'ironveil-security' ) . '</p><pre class="iv-code iv-diag">' . esc_html( Bug_Report::diagnostics() ) . '</pre>';
+		if ( Bug_Report::errors() ) {
+			self::button_form( 'ironveil_clear_errors', __( 'Clear recorded errors', 'ironveil-security' ) );
+		}
+		echo '</div></div>';
+		self::footer();
+	}
+
 	public static function page_hardening() {
+
 		$slug = self::SLUG . '-hardening';
 		self::header( $slug, __( 'Hardening', 'ironveil-security' ) );
 		self::settings_form( 'hardening', $slug );
@@ -829,7 +1072,7 @@ final class Admin {
 		$page  = isset( $_POST['ironveil_page'] ) ? sanitize_key( wp_unslash( $_POST['ironveil_page'] ) ) : '';
 		$slug  = isset( $_POST['ironveil_slug'] ) ? sanitize_key( wp_unslash( $_POST['ironveil_slug'] ) ) : self::SLUG;
 		$input = isset( $_POST['s'] ) && is_array( $_POST['s'] ) ? wp_unslash( $_POST['s'] ) : array(); // phpcs:ignore WordPress.Security.ValidatedSanitizedInput.InputNotSanitized -- sanitized per field by schema.
-		if ( ! in_array( $page, array( 'firewall', 'login', 'scanner', 'hardening', 'alerts' ), true ) ) {
+		if ( ! in_array( $page, array( 'firewall', 'login', 'scanner', 'hardening', 'alerts', 'server' ), true ) ) {
 			self::back( self::SLUG, __( 'Invalid form.', 'ironveil-security' ), 'error' );
 		}
 		$dropped = 0;
@@ -942,7 +1185,8 @@ final class Admin {
 		self::guard( 'ironveil_issue' );
 		$id = isset( $_POST['id'] ) ? absint( $_POST['id'] ) : 0;
 		$do = isset( $_POST['do'] ) ? sanitize_key( wp_unslash( $_POST['do'] ) ) : '';
-		if ( ! in_array( $do, array( 'repair', 'quarantine', 'ignore', 'reopen' ), true ) ) {
+		if ( ! in_array( $do, array( 'clean', 'repair', 'quarantine', 'ignore', 'reopen' ), true ) ) {
+
 			self::back( self::SLUG . '-scanner', __( 'Unknown action.', 'ironveil-security' ), 'error' );
 		}
 		$r = Scanner::fix_issue( $id, $do );
@@ -952,20 +1196,160 @@ final class Admin {
 		self::back( self::SLUG . '-scanner', __( 'Done.', 'ironveil-security' ) );
 	}
 
+	/**
+	 * Selected ids + action from a bulk form ("single" buttons act on one row).
+	 *
+	 * @param string $action_field Name of the bulk action field.
+	 * @return array [ ids[], action ]
+	 */
+	private static function bulk_request( $action_field ) {
+		// phpcs:disable WordPress.Security.NonceVerification.Missing -- verified by the caller's guard().
+		if ( ! empty( $_POST['single'] ) && is_string( $_POST['single'] ) ) {
+			$parts = explode( '|', sanitize_text_field( wp_unslash( $_POST['single'] ) ), 2 );
+			return array( array( $parts[0] ), sanitize_key( $parts[1] ?? '' ) );
+		}
+		$ids = isset( $_POST['ids'] ) && is_array( $_POST['ids'] ) ? array_map( 'sanitize_text_field', wp_unslash( $_POST['ids'] ) ) : array();
+		$do  = isset( $_POST[ $action_field ] ) ? sanitize_key( wp_unslash( $_POST[ $action_field ] ) ) : '';
+		// phpcs:enable
+		return array( array_slice( $ids, 0, Cleaner::BULK_MAX ), $do );
+	}
+
+	/**
+	 * Findings: clean / quarantine / ignore / reopen one or many.
+	 */
+	public static function post_bulk() {
+		self::guard( 'ironveil_bulk' );
+		$slug   = isset( $_POST['ironveil_slug'] ) ? sanitize_key( wp_unslash( $_POST['ironveil_slug'] ) ) : self::SLUG . '-scanner';
+		$slug   = in_array( $slug, array( self::SLUG . '-scanner', self::SLUG . '-server' ), true ) ? $slug : self::SLUG . '-scanner';
+		$status = isset( $_POST['status'] ) ? sanitize_key( wp_unslash( $_POST['status'] ) ) : 'open';
+		$args   = array( 'status' => in_array( $status, array( 'open', 'ignored' ), true ) ? $status : 'open' );
+		list( $ids, $do ) = self::bulk_request( 'bulk_action' );
+		$ids = array_map( 'absint', $ids );
+		if ( ! in_array( $do, array( 'clean', 'quarantine', 'ignore', 'reopen' ), true ) ) {
+			self::back( $slug, __( 'Unknown action.', 'ironveil-security' ), 'error', $args );
+		}
+		if ( ! array_filter( $ids ) ) {
+			self::back( $slug, __( 'Select at least one finding first.', 'ironveil-security' ), 'error', $args );
+		}
+		$r     = Cleaner::bulk( $ids, $do, ! empty( $_POST['fallback'] ) );
+		$names = array(
+			'clean'      => __( 'Cleaned', 'ironveil-security' ),
+			'quarantine' => __( 'Quarantined', 'ironveil-security' ),
+			'ignore'     => __( 'Ignored', 'ironveil-security' ),
+			'reopen'     => __( 'Re-opened', 'ironveil-security' ),
+		);
+		/* translators: 1: action 2: done 3: failed 4: skipped */
+		$lines = array( sprintf( __( '%1$s: %2$d done, %3$d failed, %4$d need manual review.', 'ironveil-security' ), $names[ $do ], $r['done'], count( $r['failed'] ), count( $r['skipped'] ) ) );
+		foreach ( $r['failed'] as $f ) {
+			$lines[] = '✗ ' . $f[0] . ' — ' . $f[1];
+		}
+		foreach ( $r['skipped'] as $f ) {
+			$lines[] = '• ' . $f[0] . ' — ' . $f[1];
+		}
+		if ( $r['left'] ) {
+			/* translators: %d: count */
+			$lines[] = sprintf( __( '%d item(s) were not processed yet because of the time limit. Apply the action again to continue.', 'ironveil-security' ), $r['left'] );
+		}
+		$type = $r['failed'] ? 'error' : ( $r['skipped'] || $r['left'] ? 'warning' : 'success' );
+		self::back( $slug, $lines, $type, $args );
+	}
+
+	/**
+	 * Quarantine: restore / delete one or many.
+	 */
 	public static function post_quarantine() {
 		self::guard( 'ironveil_quarantine' );
-		$id = isset( $_POST['id'] ) ? sanitize_key( wp_unslash( $_POST['id'] ) ) : '';
-		$do = isset( $_POST['do'] ) ? sanitize_key( wp_unslash( $_POST['do'] ) ) : '';
-		if ( 'restore' === $do ) {
-			$r = Quarantine::restore( $id );
-			if ( is_wp_error( $r ) ) {
-				self::back( self::SLUG . '-scanner', $r->get_error_message(), 'error' );
-			}
-			self::back( self::SLUG . '-scanner', __( 'File restored.', 'ironveil-security' ) );
+		$slug = self::SLUG . '-scanner';
+		if ( isset( $_POST['id'] ) && ! isset( $_POST['ids'] ) && empty( $_POST['single'] ) ) {
+			$_POST['single'] = sanitize_key( wp_unslash( $_POST['id'] ) ) . '|' . ( isset( $_POST['do'] ) ? sanitize_key( wp_unslash( $_POST['do'] ) ) : '' ); // Legacy single-item form.
 		}
-		Quarantine::delete( $id );
-		self::back( self::SLUG . '-scanner', __( 'Deleted permanently.', 'ironveil-security' ) );
+		list( $ids, $do ) = self::bulk_request( 'do' );
+		$ids = array_filter( array_map( 'sanitize_key', $ids ) );
+		if ( ! $ids || ! in_array( $do, array( 'restore', 'delete' ), true ) ) {
+			self::back( $slug, __( 'Select at least one quarantined file and an action.', 'ironveil-security' ), 'error' );
+		}
+		$done  = 0;
+		$lines = array();
+		foreach ( $ids as $id ) {
+			if ( 'restore' === $do ) {
+				$r = Quarantine::restore( $id );
+				if ( is_wp_error( $r ) ) {
+					$lines[] = '✗ ' . $r->get_error_message();
+					continue;
+				}
+			} else {
+				Quarantine::delete( $id );
+			}
+			++$done;
+		}
+		array_unshift( $lines, 'restore' === $do ? sprintf( /* translators: %d: count */ __( '%d file(s) restored.', 'ironveil-security' ), $done ) : sprintf( /* translators: %d: count */ __( '%d item(s) deleted permanently.', 'ironveil-security' ), $done ) );
+		self::back( $slug, $lines, count( $lines ) > 1 ? 'warning' : 'success' );
 	}
+
+	public static function post_server_scan() {
+		self::guard( 'ironveil_server_scan' );
+		$r   = Server_Scan::run( 'manual' );
+		$bad = 0;
+		foreach ( $r['checks'] as $c ) {
+			$bad += in_array( $c['status'], array( 'bad', 'warn' ), true ) ? 1 : 0;
+		}
+		/* translators: 1: checks 2: problems */
+		self::back( self::SLUG . '-server', sprintf( __( 'Server scan finished: %1$d checks, %2$d problems or warnings.', 'ironveil-security' ), count( $r['checks'] ), $bad ), $bad ? 'warning' : 'success' );
+	}
+
+	public static function post_threat_update() {
+		self::guard( 'ironveil_threat_update' );
+		$state = Threat_Feeds::update();
+		$errs  = array();
+		foreach ( $state as $k => $s ) {
+			if ( ! empty( $s['error'] ) ) {
+				$errs[] = ( Threat_Feeds::sources()[ $k ]['label'] ?? $k ) . ': ' . $s['error'];
+			}
+		}
+		/* translators: %s: count */
+		$msg = array_merge( array( sprintf( __( 'Threat feeds updated: %s networks blocked.', 'ironveil-security' ), number_format_i18n( Threat_Feeds::count() ) ) ), $errs );
+		if ( Blocklist::match( IP::client() ) ) {
+			$msg[] = __( 'Warning: your own IP address is on a threat list. Add it to the allowlist below before you are locked out.', 'ironveil-security' );
+		}
+		self::back( self::SLUG . '-firewall', $msg, $errs ? 'warning' : 'success' );
+	}
+
+	public static function post_bug_report() {
+		self::guard_basic( 'ironveil_bug_report' ); // Must work even if verification is broken.
+		$slug  = self::SLUG . '-support';
+		$input = array(
+			'summary'      => isset( $_POST['summary'] ) ? sanitize_text_field( wp_unslash( $_POST['summary'] ) ) : '',
+			'description'  => isset( $_POST['description'] ) ? sanitize_textarea_field( wp_unslash( $_POST['description'] ) ) : '',
+			'steps'        => isset( $_POST['steps'] ) ? sanitize_textarea_field( wp_unslash( $_POST['steps'] ) ) : '',
+			'reply_to'     => isset( $_POST['reply_to'] ) ? trim( (string) wp_unslash( $_POST['reply_to'] ) ) : '', // phpcs:ignore WordPress.Security.ValidatedSanitizedInput.InputNotSanitized -- validated strictly in Bug_Report::send().
+
+			'include_diag' => ! empty( $_POST['include_diag'] ),
+			'consent'      => ! empty( $_POST['consent'] ),
+		);
+		$r = Bug_Report::send( $input );
+		$key = 'ironveil_bug_draft_' . get_current_user_id();
+		if ( is_wp_error( $r ) ) {
+			$draft = $input;
+			if ( 'ironveil_bug_mail' === $r->get_error_code() ) {
+				$draft['mailto'] = Bug_Report::mailto( $input['summary'], Bug_Report::body( $input['summary'], $input['description'], $input['steps'], $input['reply_to'], $input['include_diag'] ) );
+			}
+			set_transient( $key, $draft, HOUR_IN_SECONDS );
+			self::back( $slug, $r->get_error_message(), 'error' );
+		}
+		delete_transient( $key );
+		if ( $input['include_diag'] ) {
+			Bug_Report::clear_errors();
+		}
+		/* translators: %s: email */
+		self::back( $slug, sprintf( __( 'Thank you! Your bug report was sent to %s.', 'ironveil-security' ), Bug_Report::RECIPIENT ) );
+	}
+
+	public static function post_clear_errors() {
+		self::guard_basic( 'ironveil_clear_errors' );
+		Bug_Report::clear_errors();
+		self::back( self::SLUG . '-support', __( 'Recorded errors cleared.', 'ironveil-security' ) );
+	}
+
 
 	public static function post_clamav_test() {
 		self::guard( 'ironveil_clamav_test' );

@@ -182,7 +182,9 @@ final class Scanner {
 			$s['stage']   = 'done';
 			self::save_state( $s );
 			Log::add( 'scan_error', $s['message'], Log::WARNING );
+			Bug_Report::capture( $e, 'scan_step' );
 		}
+
 		self::unlock();
 		return $s;
 	}
@@ -277,8 +279,10 @@ final class Scanner {
 		if ( ! $real ) {
 			return false;
 		}
-		$real = wp_normalize_path( $real );
-		foreach ( array_merge( array( ABSPATH, WP_CONTENT_DIR ), Settings::lines( 'scan_extra_paths' ) ) as $root ) {
+		$real  = wp_normalize_path( $real );
+		$roots = (array) apply_filters( 'ironveil_safe_roots', array_merge( array( ABSPATH, WP_CONTENT_DIR ), Settings::lines( 'scan_extra_paths' ), Server_Scan::temp_dirs() ) );
+		foreach ( $roots as $root ) {
+
 			$r = rtrim( wp_normalize_path( (string) realpath( $root ) ), '/' ) . '/';
 			if ( '/' !== $r && 0 === strpos( $real, $r ) ) {
 				return $real;
@@ -852,7 +856,7 @@ final class Scanner {
 	 * @param string $slug Plugin directory.
 	 * @return string|null
 	 */
-	private static function plugin_version( $slug ) {
+	public static function plugin_version( $slug ) {
 		static $map = null;
 		if ( null === $map ) {
 			if ( ! function_exists( 'get_plugins' ) ) {
@@ -1018,7 +1022,7 @@ final class Scanner {
 	private static function stage_content( array &$s, $deadline ) {
 		global $wpdb;
 		$max = (int) $wpdb->get_var( "SELECT MAX(ID) FROM {$wpdb->posts}" ); // phpcs:ignore WordPress.DB.DirectDatabaseQuery
-		$re  = '~<script[^>]*>[^<]{0,4000}?(?:eval\s*\(|String\.fromCharCode|atob\s*\(|document\.write\s*\(\s*unescape|\\\\x[0-9a-f]{2}\\\\x[0-9a-f]{2}\\\\x|window\.location(?:\.href)?\s*=\s*[\'"]https?://)|<script[^>]+src=[\'"]?https?://[^\'"\s>]*(?:\.(?:tk|ml|ga|cf|gq|top|xyz|ru|cn)/|' . implode( '|', array_map( 'preg_quote', array( 'lowerbeforwarden', 'balantfromsun', 'trackstatisticsss', 'stringengines', 'dontkinhooot' ) ) ) . ')|<iframe(?![^>]*\bwp-embedded-content\b)[^>]*[\s"\'](?:width|height)\s*=\s*[\'"]?[01][\'"\s>]~i';
+		$re  = self::content_regex();
 		while ( $s['post_id'] <= $max && microtime( true ) < $deadline ) {
 			$from = (int) $s['post_id'];
 			$rows = $wpdb->get_results( $wpdb->prepare( "SELECT ID, post_title, post_type, post_content FROM {$wpdb->posts} WHERE ID > %d AND ID <= %d AND post_type NOT IN ('revision','attachment','oembed_cache','customize_changeset') AND (post_content LIKE %s OR post_content LIKE %s)", $from, $from + 500, '%<script%', '%<iframe%' ) ); // phpcs:ignore WordPress.DB.DirectDatabaseQuery
@@ -1043,6 +1047,15 @@ final class Scanner {
 	}
 
 	/**
+	 * Regex for scripts / hidden iframes injected into posts and widgets.
+	 *
+	 * @return string
+	 */
+	public static function content_regex() {
+		return '~<script[^>]*>[^<]{0,4000}?(?:eval\s*\(|String\.fromCharCode|atob\s*\(|document\.write\s*\(\s*unescape|\\\\x[0-9a-f]{2}\\\\x[0-9a-f]{2}\\\\x|window\.location(?:\.href)?\s*=\s*[\'"]https?://)|<script[^>]+src=[\'"]?https?://[^\'"\s>]*(?:\.(?:tk|ml|ga|cf|gq|top|xyz|ru|cn)/|' . implode( '|', array_map( 'preg_quote', array( 'lowerbeforwarden', 'balantfromsun', 'trackstatisticsss', 'stringengines', 'dontkinhooot' ) ) ) . ')|<iframe(?![^>]*\bwp-embedded-content\b)[^>]*[\s"\'](?:width|height)\s*=\s*[\'"]?[01][\'"\s>]~i';
+	}
+
+	/**
 	 * Wrap-up: remove vanished files, resolve issues not seen again, notify.
 	 *
 	 * @param array $s State.
@@ -1057,6 +1070,9 @@ final class Scanner {
 		// findings stay open when ClamAV was unavailable, and files that failed to
 		// scan (daemon errors) keep their previous ClamAV findings.
 		$keep = empty( $s['clam'] ) || $s['counts']['clam_err'] ? " AND type <> 'clamav'" : '';
+		$keep .= " AND SUBSTR(type, 1, 7) <> 'server_'"; // Server findings are resolved by the server scan.
+
+
 		$wpdb->query( $wpdb->prepare( "UPDATE {$issues} SET status = 'resolved', updated = %d WHERE status = 'open' AND scan_id < %d{$keep}", time(), $s['id'] ) ); // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared,WordPress.DB.DirectDatabaseQuery
 		$s['counts']['issues'] = self::count_open( 1 );
 		update_option( 'ironveil_last_scan_end', time(), false );
@@ -1180,11 +1196,12 @@ final class Scanner {
 	 * Apply an action to an issue.
 	 *
 	 * @param int    $id     Issue.
-	 * @param string $action repair|quarantine|ignore|reopen.
+	 * @param string $action clean|repair|quarantine|ignore|reopen.
 	 * @param bool   $auto   Triggered automatically.
+	 * @param array  $opts   fallback: quarantine files that cannot be cleaned.
 	 * @return true|\WP_Error
 	 */
-	public static function fix_issue( $id, $action, $auto = false ) {
+	public static function fix_issue( $id, $action, $auto = false, array $opts = array() ) {
 		global $wpdb;
 		$table = self::issues_table();
 		$row   = $wpdb->get_row( $wpdb->prepare( "SELECT * FROM {$table} WHERE id = %d", (int) $id ) ); // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared,WordPress.DB.DirectDatabaseQuery
@@ -1200,10 +1217,15 @@ final class Scanner {
 				$wpdb->update( $table, array( 'status' => 'open', 'updated' => time() ), array( 'id' => (int) $id ) ); // phpcs:ignore WordPress.DB.DirectDatabaseQuery
 				return true;
 			case 'quarantine':
-				$r = Quarantine::add( (string) $row->path, (string) $row->detail );
+				$r = Cleaner::is_file_path( (string) $row->path )
+					? Quarantine::add( (string) $row->path, (string) $row->detail )
+					: new \WP_Error( 'ironveil_manual', __( 'This finding is not a file, so it cannot be quarantined. Use Clean or Ignore.', 'ironveil-security' ) );
 				break;
 			case 'repair':
 				$r = self::repair_core( (string) $row->path );
+				break;
+			case 'clean':
+				$r = Cleaner::clean( $row, ! empty( $opts['fallback'] ) );
 				break;
 			default:
 				return new \WP_Error( 'ironveil_action', __( 'Unknown action.', 'ironveil-security' ) );
@@ -1214,7 +1236,9 @@ final class Scanner {
 		}
 		// The file was replaced/removed: close every open finding for this path, not just this one.
 		$wpdb->query( $wpdb->prepare( "UPDATE {$table} SET status = 'fixed', updated = %d WHERE status = 'open' AND ( id = %d OR path = %s )", time(), (int) $id, (string) $row->path ) ); // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared,WordPress.DB.DirectDatabaseQuery
-		$wpdb->update( self::files_table(), array( 'verdict' => 0, 'md5' => '' ), array( 'path_hash' => md5( (string) $row->path ) ) ); // phpcs:ignore WordPress.DB.DirectDatabaseQuery
+		if ( Cleaner::is_file_path( (string) $row->path ) ) {
+			$wpdb->update( self::files_table(), array( 'verdict' => 0, 'md5' => '' ), array( 'path_hash' => md5( (string) $row->path ) ) ); // phpcs:ignore WordPress.DB.DirectDatabaseQuery
+		}
 		Log::add( 'issue_fixed', sprintf( '%1$s%2$s: %3$s', $auto ? 'Auto-' : '', $action, $row->path ), Log::WARNING );
 		return true;
 	}

@@ -2,8 +2,8 @@
 /**
  * Plugin Name:       IronVeil Security
  * Plugin URI:        https://example.com/ironveil-security
- * Description:       Lightweight, high-grade WordPress security: zero-query web application firewall, brute-force and bot protection, TOTP two-factor login, incremental malware and file-integrity scanner with quarantine and core-file repair, hardening, and a tamper-evident activity log.
- * Version:           1.2.1
+ * Description:       Lightweight, high-grade WordPress security: zero-query web application firewall with threat-intelligence feeds, brute-force and bot protection, TOTP two-factor login, one-step administrator identity verification, incremental malware and file-integrity scanner with bulk clean / quarantine, server security scanner, hardening, bug reporting and a tamper-evident activity log.
+ * Version:           1.3.0
  * Requires at least: 6.0
  * Requires PHP:      7.4
  * Author:            Jassim T Mohammad
@@ -21,7 +21,8 @@ if ( defined( 'IRONVEIL_VERSION' ) ) {
 	return; // Guard against a duplicate copy of the plugin.
 }
 
-define( 'IRONVEIL_VERSION', '1.2.1' );
+define( 'IRONVEIL_VERSION', '1.3.0' );
+
 define( 'IRONVEIL_DB_VERSION', 1 );
 define( 'IRONVEIL_FILE', __FILE__ );
 define( 'IRONVEIL_DIR', __DIR__ . '/' );

@@ -59,10 +59,12 @@ final class Hardening {
 	/**
 	 * Security headers (only those not already set).
 	 */
-	public static function send_headers() {
+	public static function send_headers( $wp = null ) {
 		if ( headers_sent() ) {
 			return;
 		}
+		// WordPress post embeds (/embed/) are designed to be framed by other sites.
+		$embed = $wp instanceof \WP && ! empty( $wp->query_vars['embed'] );
 		$existing = array();
 		foreach ( headers_list() as $h ) {
 			$existing[ strtolower( strtok( $h, ':' ) ) ] = true;
@@ -74,9 +76,19 @@ final class Hardening {
 			'Permissions-Policy'         => 'camera=(), microphone=(), geolocation=(), payment=(self), browsing-topics=()',
 			'Cross-Origin-Opener-Policy' => 'same-origin-allow-popups',
 		);
+		$headers['X-Permitted-Cross-Domain-Policies'] = 'none';
 		if ( Settings::get( 'hard_hsts' ) && is_ssl() ) {
 			$headers['Strict-Transport-Security'] = 'max-age=31536000';
 		}
+		if ( Settings::get( 'hard_csp' ) && ! isset( $existing['content-security-policy'] ) ) {
+			// Baseline policy: restricts framing and <base>, never scripts or embeds.
+			$headers['Content-Security-Policy'] = ( $embed ? '' : "frame-ancestors 'self'; " ) . "base-uri 'self'" . ( is_ssl() ? '; upgrade-insecure-requests' : '' );
+		}
+		if ( $embed ) {
+			unset( $headers['X-Frame-Options'] );
+		}
+
+
 		foreach ( $headers as $name => $value ) {
 			if ( ! isset( $existing[ strtolower( $name ) ] ) ) {
 				header( $name . ': ' . $value );
@@ -349,7 +361,11 @@ final class Hardening {
 
 		$last       = (int) get_option( 'ironveil_last_scan_end' );
 		$c['scan']  = array( __( 'Malware scan ran in the last 7 days', 'ironveil-security' ), $last > time() - WEEK_IN_SECONDS ? 'good' : 'warn', $last ? sprintf( /* translators: %s: time */ __( 'Last scan: %s ago', 'ironveil-security' ), human_time_diff( $last ) ) : __( 'Never scanned.', 'ironveil-security' ), 10 );
+		$srv        = Server_Scan::report();
+		$c['server'] = array( __( 'Server scan ran in the last 30 days', 'ironveil-security' ), $srv && (int) $srv['time'] > time() - 30 * DAY_IN_SECONDS ? 'good' : 'warn', $srv ? sprintf( /* translators: %s: time */ __( 'Last server scan: %s ago', 'ironveil-security' ), human_time_diff( (int) $srv['time'] ) ) : __( 'Run it from IronVeil → Server Scan.', 'ironveil-security' ), 3 );
+		$c['verify'] = array( __( 'Administrator identity verification is on', 'ironveil-security' ), Verify::enabled() ? 'good' : 'warn', Verify::enabled() ? '' : __( 'Sensitive actions are not protected against stolen sessions.', 'ironveil-security' ), 5 );
 		$crit       = Scanner::count_open( 3 );
+
 		/* translators: %d: count */
 		$c['issues'] = array( __( 'No high-severity scan findings', 'ironveil-security' ), $crit ? 'bad' : 'good', $crit ? sprintf( _n( '%d open high-severity finding.', '%d open high-severity findings.', $crit, 'ironveil-security' ), $crit ) : '', 20 );
 

@@ -54,8 +54,23 @@ final class Settings {
 					'uploads'    => __( 'Malicious file uploads', 'ironveil-security' ),
 					'probes'     => __( 'Vulnerability probes (.env, .git, backups, shells)', 'ironveil-security' ),
 					'scanner_ua' => __( 'Known attack tools (sqlmap, nikto, ...)', 'ironveil-security' ),
+					'ssrf'       => __( 'Server-side request forgery (cloud metadata, internal URLs)', 'ironveil-security' ),
+					'xxe'        => __( 'XML external entities (XXE) in form data and XML bodies', 'ironveil-security' ),
+					'crlf'       => __( 'HTTP header / CRLF injection and response splitting', 'ironveil-security' ),
+					'protocol'   => __( 'HTTP protocol enforcement (bad methods, null bytes, oversized requests)', 'ironveil-security' ),
 				),
-				'default' => array( 'sqli', 'xss', 'traversal', 'rce', 'objinj', 'uploads', 'probes', 'scanner_ua' ),
+				'default' => array( 'sqli', 'xss', 'traversal', 'rce', 'objinj', 'uploads', 'probes', 'scanner_ua', 'ssrf', 'xxe', 'crlf', 'protocol' ),
+			),
+			'fw_threat_feeds'       => array(
+				'page'    => 'firewall',
+				'type'    => 'multicheck',
+				'label'   => __( 'Threat intelligence IP feeds', 'ironveil-security' ),
+				'desc'    => __( 'Downloaded once a day and merged into the blocklist (still zero database queries per request). Spamhaus DROP lists hijacked networks run by spammers and cyber-criminals. Tor blocking also stops legitimate privacy-conscious visitors, so enable it only if you need to. Your allowlist always wins.', 'ironveil-security' ),
+				'options' => array(
+					'spamhaus_drop' => __( 'Spamhaus DROP (hijacked / criminal networks)', 'ironveil-security' ),
+					'tor'           => __( 'Tor exit nodes', 'ironveil-security' ),
+				),
+				'default' => array(),
 			),
 			'fw_autoblock_hits'     => array(
 				'page'    => 'firewall',
@@ -260,6 +275,28 @@ final class Settings {
 				'max'     => 10080,
 				'default' => 0,
 			),
+			'verify_enabled'        => array(
+				'page'    => 'login',
+				'type'    => 'bool',
+				'label'   => __( 'Administrator identity verification', 'ironveil-security' ),
+				'desc'    => __( 'One verification step protects everything sensitive on an administrator account: IronVeil actions and settings, plugin and theme installs, users and roles, site settings, exports, application passwords and 2FA changes. Verify once with your authenticator code (or an emailed code) and stay verified for the window below. Signing in with two-factor counts as verifying. Emergency: define IRONVEIL_DISABLE_VERIFY in wp-config.php.', 'ironveil-security' ),
+				'default' => 1,
+			),
+			'verify_ttl_min'        => array(
+				'page'    => 'login',
+				'type'    => 'int',
+				'label'   => __( 'Stay verified for (minutes)', 'ironveil-security' ),
+				'min'     => 5,
+				'max'     => 240,
+				'default' => 15,
+			),
+			'verify_email'          => array(
+				'page'    => 'login',
+				'type'    => 'bool',
+				'label'   => __( 'Allow emailed verification codes', 'ironveil-security' ),
+				'desc'    => __( 'Lets administrators without an authenticator app verify with a one-time code sent to their account email. Turn off to require two-factor authentication.', 'ironveil-security' ),
+				'default' => 1,
+			),
 
 			// ---------------------------------------------------------------- Scanner.
 			'scan_schedule'         => array(
@@ -447,6 +484,41 @@ final class Settings {
 				'label'   => __( 'Block comment spam bots (honeypot + time trap)', 'ironveil-security' ),
 				'default' => 1,
 			),
+			'hard_csp'              => array(
+				'page'    => 'hardening',
+				'type'    => 'bool',
+				'label'   => __( 'Send a baseline Content-Security-Policy', 'ironveil-security' ),
+				'desc'    => __( "frame-ancestors 'self'; base-uri 'self' (plus upgrade-insecure-requests on HTTPS). Blocks clickjacking and base-tag hijacking without restricting your scripts or embeds. Skipped when another plugin or the server already sends a CSP.", 'ironveil-security' ),
+
+				'default' => 1,
+			),
+
+			// ---------------------------------------------------------------- Server scan.
+			'server_scan_schedule'  => array(
+				'page'    => 'server',
+				'type'    => 'select',
+				'label'   => __( 'Automatic server scan', 'ironveil-security' ),
+				'options' => array(
+					'daily'  => __( 'Daily', 'ironveil-security' ),
+					'weekly' => __( 'Weekly', 'ironveil-security' ),
+					'off'    => __( 'Off (manual only)', 'ironveil-security' ),
+				),
+				'default' => 'weekly',
+			),
+			'server_http_checks'    => array(
+				'page'    => 'server',
+				'type'    => 'bool',
+				'label'   => __( 'Check the site over HTTP', 'ironveil-security' ),
+				'desc'    => __( 'Requests your own site (loopback) to detect exposed files, directory listing, missing security headers and TLS certificate expiry.', 'ironveil-security' ),
+				'default' => 1,
+			),
+			'server_port_check'     => array(
+				'page'    => 'server',
+				'type'    => 'bool',
+				'label'   => __( 'Check for exposed database and cache ports', 'ironveil-security' ),
+				'desc'    => __( 'Tries to connect to MySQL, PostgreSQL, Redis, Memcached, MongoDB, Elasticsearch, FTP and Telnet ports on this server\'s public address only.', 'ironveil-security' ),
+				'default' => 1,
+			),
 
 			// ---------------------------------------------------------------- Alerts & log.
 			'notify_email'          => array(
@@ -466,8 +538,11 @@ final class Settings {
 					'admin_login' => __( 'An administrator logs in', 'ironveil-security' ),
 					'plugin'      => __( 'Plugins or themes are installed / activated', 'ironveil-security' ),
 					'new_admin'   => __( 'A user receives the administrator role', 'ironveil-security' ),
+					'verify'      => __( 'Identity verification fails repeatedly', 'ironveil-security' ),
+					'server'      => __( 'A server scan finds new problems', 'ironveil-security' ),
 				),
-				'default' => array( 'scan', 'new_admin' ),
+				'default' => array( 'scan', 'new_admin', 'verify', 'server' ),
+
 			),
 			'log_retention_days'    => array(
 				'page'    => 'alerts',
@@ -500,7 +575,8 @@ final class Settings {
 	private static function raw_defaults() {
 		return array(
 			'fw_mode'               => 'block',
-			'fw_rules'              => array( 'sqli', 'xss', 'traversal', 'rce', 'objinj', 'uploads', 'probes', 'scanner_ua' ),
+			'fw_rules'              => array( 'sqli', 'xss', 'traversal', 'rce', 'objinj', 'uploads', 'probes', 'scanner_ua', 'ssrf', 'xxe', 'crlf', 'protocol' ),
+			'fw_threat_feeds'       => array(),
 			'fw_autoblock_hits'     => 5,
 			'fw_autoblock_hours'    => 24,
 			'fw_404_limit'          => 40,
@@ -526,6 +602,9 @@ final class Settings {
 			'twofa_remember_days'   => 30,
 			'breach_check'          => 1,
 			'idle_timeout'          => 0,
+			'verify_enabled'        => 1,
+			'verify_ttl_min'        => 15,
+			'verify_email'          => 1,
 			'scan_schedule'         => 'daily',
 			'scan_auto_quarantine'  => 0,
 			'scan_auto_repair_core' => 0,
@@ -551,8 +630,13 @@ final class Settings {
 			'hard_uploads_php'      => 1,
 			'hard_pingbacks'        => 1,
 			'comment_honeypot'      => 1,
+			'hard_csp'              => 1,
+			'server_scan_schedule'  => 'weekly',
+			'server_http_checks'    => 1,
+			'server_port_check'     => 1,
 			'notify_email'          => '',
-			'notify_events'         => array( 'scan', 'new_admin' ),
+			'notify_events'         => array( 'scan', 'new_admin', 'verify', 'server' ),
+
 			'log_retention_days'    => 60,
 			'log_max_rows'          => 100000,
 		);
@@ -578,8 +662,15 @@ final class Settings {
 	public static function get( $key ) {
 		// Pro-only features take their Free value unless a valid license is active.
 		if ( License::is_pro_setting( $key ) && ! License::is_pro() ) {
-			return License::PRO_SETTINGS[ $key ];
+			$free = License::PRO_SETTINGS[ $key ];
+			if ( is_array( $free ) && $free ) {
+				// Free keeps a subset of a multi-choice setting (e.g. critical alerts) as the admin chose it.
+				$all = self::all();
+				return array_values( array_intersect( (array) ( $all[ $key ] ?? array() ), $free ) );
+			}
+			return $free;
 		}
+
 		$all = self::all();
 		return isset( $all[ $key ] ) ? $all[ $key ] : null;
 	}

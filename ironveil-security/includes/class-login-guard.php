@@ -14,7 +14,7 @@ defined( 'ABSPATH' ) || exit;
 
 final class Login_Guard {
 
-	const HP_FIELD = 'ironveil_hp_email';
+	const HP_FIELD = 'ironveil_hp_x9'; // Deliberately not "email"/"url"-like, so password managers never autofill it.
 
 	/** @var bool Current request is locked out. */
 	private static $locked = false;
@@ -267,7 +267,8 @@ final class Login_Guard {
 	public static function honeypot_field() {
 		echo '<p style="position:absolute;left:-10000px;top:auto;width:1px;height:1px;overflow:hidden" aria-hidden="true"><label>'
 			. esc_html__( 'Leave this field empty', 'ironveil-security' )
-			. '<input type="text" name="' . esc_attr( self::HP_FIELD ) . '" value="" tabindex="-1" autocomplete="off"></label></p>';
+			. '<input type="text" name="' . esc_attr( self::HP_FIELD ) . '" value="" tabindex="-1" autocomplete="off" data-1p-ignore data-lpignore="true"></label></p>';
+
 	}
 
 	/**

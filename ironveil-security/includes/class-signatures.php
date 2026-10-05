@@ -15,7 +15,7 @@ defined( 'ABSPATH' ) || exit;
 final class Signatures {
 
 	/** Bump to force re-analysis of every file with new signatures. */
-	const VERSION = 4;
+	const VERSION = 5;
 
 	const SEV_LOW      = 1;
 	const SEV_MEDIUM   = 2;
@@ -88,7 +88,8 @@ final class Signatures {
 	 * @return string[]
 	 */
 	private static function builtin_filenames() {
-		return array( 'wso.php', 'c99.php', 'r57.php', 'b374k.php', 'alfa.php', 'alfashell.php', 'shell.php', 'cmd.php', 'up.php', 'uploader.php', 'radio.php', 'wp-vcd.php', 'wp-tmp.php', 'class.theme-modules.php', 'adminer.php', 'mini.php', 'leafmailer.php', 'priv8.php', 'wp-crom.php', 'wp-2019.php', 'xleet.php', 'marijuana.php', 'fox.php', 'lf.php', 'x.php', 'accesson.php', 'wp-conflg.php', 'wp-l0gin.php' );
+		return array( 'wso.php', 'c99.php', 'r57.php', 'b374k.php', 'alfa.php', 'alfashell.php', 'shell.php', 'cmd.php', 'up.php', 'uploader.php', 'radio.php', 'wp-vcd.php', 'wp-tmp.php', 'class.theme-modules.php', 'adminer.php', 'mini.php', 'leafmailer.php', 'priv8.php', 'wp-crom.php', 'wp-2019.php', 'xleet.php', 'marijuana.php', 'fox.php', 'lf.php', 'x.php', 'accesson.php', 'wp-conflg.php', 'wp-l0gin.php', 'wp-atom.php', 'wp-feed.php', 'wp-p.php', 'byp.php', 'sx.php', 'wp-admin-ajax.php', 'wp-signin.php' );
+
 	}
 
 	/** @var array|null Merged rule sets (built-in + feed + custom). */

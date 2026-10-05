@@ -66,3 +66,45 @@ Tests (run as a non-root PHP user):
 
 ## Test environment notes
 Sandbox: WP 6.5.5 + SQLite, PHP 8.4, real ClamAV 1.5.4 with a local test DB. wordpress.org is not reachable from the sandbox, so we simulated core checksums and core.svn with test mu-plugins.
+
+## v1.3.0: verification, bulk remediation, server scan, hardening
+Source is now unpacked in `ironveil-security/`. The installable build is `ironveil-security-1.3.0.zip`. The admin guide that ships with the plugin is `ironveil-security/INSTRUCTIONS.md`.
+
+- Administrator identity verification (`class-verify.php`). One verification (TOTP, recovery code or a session-bound emailed code) unlocks every sensitive action for a configurable window (15 min by default). The window is stored inside the WordPress session token. It gates IronVeil screens and handlers, plugin/theme/user/settings/export screens, sensitive admin-ajax actions, and REST application passwords, plugins, themes, settings and user changes. Application-password REST clients are exempt because only a verified admin can create those credentials. 5 bad codes per 15 min lock code checks for the account, log a critical event and send an alert. A 2FA login marks the session verified.
+- Bulk remediation (`class-cleaner.php`). Findings and quarantine items have checkboxes, severity quick-select, per-row buttons and a summary notice. "Clean" picks the fix per finding:
+  - core file: official copy;
+  - wordpress.org plugin file: official copy from plugins.svn, checksum-verified;
+  - illegitimate file: quarantine;
+  - injected theme/custom-plugin code: surgical removal using token-level statement/block ranges, then a `TOKEN_PARSE` syntax check, a re-scan and an optional ClamAV re-check, with a backup kept;
+  - posts and widgets: injected element removed, revision kept;
+  - vulnerable plugin or theme: update.
+  An optional fallback quarantines files that can't be cleaned. Bulk runs are time-boxed (40 s) and report what is left.
+- Server scan (`class-server-scan.php`). Checks PHP, database, files, accounts, HTTP over loopback (headers, TLS expiry, exposed files, listing, TRACE) and public service ports. Findings are `server_*` issues with fixers: chmod, quarantine, and root `.htaccess` protection rules. Weekly cron and alerts.
+- Firewall. New groups ssrf (plus ssrf_local, skipped when the site itself is on a loopback/private host), xxe (including raw XML bodies), crlf (matched without whitespace normalisation) and protocol. Also an RFI rule, and a fix for the `' OR '1'='1' --` tautology.
+- Threat feeds (`class-threat-feeds.php`). Spamhaus DROP/DROPv6 and Tor, opt-in, daily, 3-day TTL. Networks that overlap private space, this server or the allowlist are skipped. Feeds are kept out of the main block cache in a compact, merged, sorted binary list searched by binary search: about 30 KB autoloaded instead of about 320 KB serialized, roughly 10× faster per request.
+- Bug reports (`class-bug-report.php`). A consent-gated email to ironveil.wpplug@gmail.com with redacted diagnostics shown before sending, 3 per hour, a mailto fallback, and capture of fatal errors and exceptions from IronVeil code.
+- Hardening:
+  - per-account 2FA rate limit across login restarts and profile actions;
+  - no re-enrolling 2FA over an existing secret;
+  - 2FA changes need verification;
+  - Apache 2.2/2.4-safe deny rules (the old bare "Deny from all" can 500 on 2.4);
+  - quarantine size cap;
+  - index.php guards in plugin folders;
+  - honeypot field renamed so password managers don't autofill it;
+  - baseline CSP (frame-ancestors, base-uri) that keeps post embeds frameable;
+  - X-Permitted-Cross-Domain-Policies;
+  - new-admin and verification-lockout alerts in Free;
+  - a settings migration on upgrade.
+- Docs fix: WP-CLI subcommands are hyphenated (`reset-2fa`, `reset-login-url`).
+
+Tests, run on WP 6.5.5 + SQLite on PHP 8.3 with simulated wordpress.org responses:
+- 26 verification checks over HTTP, covering 2FA login, email codes, lockout plus alert, Lock now, core screens, options.php, REST app passwords, open redirect and editors unaffected.
+- 25 admin workflow checks, covering bulk/single actions, CSRF, settings, feeds, bug report consent and header-injection rejection.
+- All 10 admin screens render with no notices.
+- 44-request firewall suite: attacks blocked and normal traffic allowed. The 2 loopback-SSRF requests are exempt by design on a localhost site and are proven blocked on public sites by unit tests.
+- End-to-end malware cleanup of 11 planted samples (core, plugin, theme, JS, .htaccess, uploads shell, root backdoor, post injection, whole-file shell, /tmp dropper, exposed backups).
+- Server-scan fixes.
+- Feed binary search matches brute force on 20,000 addresses.
+- 1.2.1 to 1.3.0 settings migration, Pro license path with the owner key, deactivation and uninstall cleanup.
+
+Not tested here: multisite, real ClamAV, nginx, PHP 7.4 runtime (the code avoids PHP 8-only syntax), and live wordpress.org/Spamhaus downloads, which the sandbox blocks.

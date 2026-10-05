@@ -15,6 +15,12 @@ final class Quarantine {
 
 	const OPTION = 'ironveil_quarantine';
 
+	/** Largest file that is moved into the quarantine (it is held in memory once). */
+	const MAX_BYTES = 52428800;
+
+	/** Deny rules that work on Apache 2.2 and 2.4 (a bare "Deny from all" is a 500 on 2.4 without mod_access_compat). */
+	const HTACCESS = "<IfModule mod_authz_core.c>\n\tRequire all denied\n</IfModule>\n<IfModule !mod_authz_core.c>\n\tOrder allow,deny\n\tDeny from all\n</IfModule>\nOptions -Indexes\n";
+
 	/**
 	 * @return string Directory (created and locked down on demand).
 	 */
@@ -24,13 +30,16 @@ final class Quarantine {
 			wp_mkdir_p( $dir );
 		}
 		$guards = array(
-			'.htaccess'  => "Require all denied\nDeny from all\n",
+			'.htaccess'  => self::HTACCESS,
 			'index.php'  => "<?php\n// Silence is golden.\n",
+			'index.html' => '',
 			'web.config' => '<?xml version="1.0"?><configuration><system.webServer><authorization><deny users="*" /></authorization></system.webServer></configuration>',
 		);
 		foreach ( $guards as $f => $c ) {
-			if ( ! is_file( $dir . '/' . $f ) ) {
-				file_put_contents( $dir . '/' . $f, $c ); // phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_file_put_contents
+			$path = $dir . '/' . $f;
+			// Rewrite the old 1.2.x .htaccess (could 500 on Apache 2.4) as well as missing guards.
+			if ( ! is_file( $path ) || ( '.htaccess' === $f && false === strpos( (string) file_get_contents( $path ), 'IfModule' ) ) ) { // phpcs:ignore WordPress.WP.AlternativeFunctions.file_get_contents_file_get_contents
+				file_put_contents( $path, $c ); // phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_file_put_contents
 			}
 		}
 		return $dir;
@@ -60,6 +69,10 @@ final class Quarantine {
 		if ( $remove && self::protected_file( $abs ) ) {
 			return new \WP_Error( 'ironveil_q', __( 'This file is essential to WordPress and cannot be quarantined. Use "Repair" or edit it manually.', 'ironveil-security' ) );
 		}
+		if ( (int) @filesize( $abs ) > self::MAX_BYTES ) { // phpcs:ignore WordPress.PHP.NoSilencedErrors.Discouraged
+			return new \WP_Error( 'ironveil_q', __( 'This file is larger than 50 MB. Move it out of the website folders (or delete it) with your host\'s File Manager or FTP.', 'ironveil-security' ) );
+		}
+
 		$content = file_get_contents( $abs ); // phpcs:ignore WordPress.WP.AlternativeFunctions.file_get_contents_file_get_contents
 		if ( false === $content ) {
 			return new \WP_Error( 'ironveil_q', __( 'File is not readable.', 'ironveil-security' ) );

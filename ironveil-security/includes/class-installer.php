@@ -56,20 +56,50 @@ final class Installer {
 	 * Deactivate: remove cron + MU loader, keep data.
 	 */
 	public static function deactivate() {
-		foreach ( array( self::CRON_HOURLY, self::CRON_DAILY, self::CRON_SCAN, self::CRON_SCANSTEP ) as $hook ) {
+		foreach ( array( self::CRON_HOURLY, self::CRON_DAILY, self::CRON_SCAN, self::CRON_SCANSTEP, Server_Scan::CRON ) as $hook ) {
 			wp_clear_scheduled_hook( $hook );
 		}
 		self::remove_mu_loader();
 		Hardening::remove_server_rules();
+		Server_Scan::remove_root_rules();
 	}
 
 	/**
-	 * Run dbDelta if schema version changed.
+	 * Run dbDelta if schema version changed; migrate settings once per release.
 	 */
 	public static function maybe_upgrade() {
 		if ( (int) get_option( 'ironveil_db_version' ) < IRONVEIL_DB_VERSION ) {
 			self::install_site();
 		}
+		if ( version_compare( (string) get_option( 'ironveil_version', '0' ), IRONVEIL_VERSION, '<' ) ) {
+			self::migrate( (string) get_option( 'ironveil_version', '0' ) );
+			update_option( 'ironveil_version', IRONVEIL_VERSION, true );
+		}
+	}
+
+	/**
+	 * One-time settings migration: turn on protections added in a release for
+	 * sites that saved their settings before those options existed.
+	 *
+	 * @param string $from Previously installed version ('0' = unknown / fresh).
+	 */
+	private static function migrate( $from ) {
+		$stored = get_option( Settings::OPTION );
+		if ( ! is_array( $stored ) || ! $stored ) {
+			self::schedule();
+			return; // Fresh install or defaults only: new defaults already apply.
+		}
+		if ( version_compare( $from, '1.3.0', '<' ) ) {
+			if ( isset( $stored['fw_rules'] ) && is_array( $stored['fw_rules'] ) ) {
+				$stored['fw_rules'] = array_values( array_unique( array_merge( $stored['fw_rules'], array( 'ssrf', 'xxe', 'crlf', 'protocol' ) ) ) );
+			}
+			if ( isset( $stored['notify_events'] ) && is_array( $stored['notify_events'] ) ) {
+				$stored['notify_events'] = array_values( array_unique( array_merge( $stored['notify_events'], array( 'verify', 'server' ) ) ) );
+			}
+			update_option( Settings::OPTION, $stored, true );
+			Settings::flush();
+		}
+		self::schedule();
 	}
 
 	/**
@@ -160,12 +190,14 @@ final class Installer {
 		if ( ! wp_next_scheduled( self::CRON_DAILY ) ) {
 			wp_schedule_event( time() + 900, 'daily', self::CRON_DAILY );
 		}
+		Server_Scan::schedule();
 		$want = Settings::get( 'scan_schedule' );
 		$next = wp_get_scheduled_event( self::CRON_SCAN );
 		if ( 'off' === $want ) {
 			wp_clear_scheduled_hook( self::CRON_SCAN );
 			return;
 		}
+
 		if ( ! $next || $next->schedule !== $want ) {
 			wp_clear_scheduled_hook( self::CRON_SCAN );
 			// Spread load: start at a random time in the next few hours (off-peak-ish).

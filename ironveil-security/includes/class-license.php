@@ -61,7 +61,8 @@ final class License {
 		'scan_auto_repair_core' => 0,
 		'wpscan_token'          => '',
 		'fw_blocked_countries'  => '',
-		'notify_events'         => array(),
+		'notify_events'         => array( 'new_admin', 'verify' ), // Security-critical alerts stay on in Free.
+
 		'scan_deep_days'        => 0,
 	);
 

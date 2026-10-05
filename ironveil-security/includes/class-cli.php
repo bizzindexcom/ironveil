@@ -58,8 +58,9 @@ final class Cli {
 			\WP_CLI::log( sprintf( 'Stage: %s · files %d · analysed %d · ClamAV %d (errors %d)', $s['stage'], $s['counts']['files'], $s['counts']['analyzed'], $s['counts']['clamav'], $s['counts']['clam_err'] ) );
 		}
 		foreach ( Scanner::issues( 'open' ) as $i ) {
-			\WP_CLI::log( sprintf( '[%s] %s — %s', Scanner::severity_label( $i->severity ), $i->detail, $i->path ) );
+			\WP_CLI::log( sprintf( '#%d [%s] %s — %s', $i->id, Scanner::severity_label( $i->severity ), $i->detail, $i->path ) );
 		}
+
 		\WP_CLI::success( sprintf( '%d open findings.', Scanner::count_open( 1 ) ) );
 	}
 
@@ -188,4 +189,93 @@ final class Cli {
 		Settings::import( array( 'login_slug' => '' ) );
 		\WP_CLI::success( 'Custom login URL removed; wp-login.php works again.' );
 	}
+
+	/**
+	 * Run the server security scan and print the report.
+	 *
+	 * @subcommand server-scan
+	 */
+	public function server_scan() {
+		$r = Server_Scan::run( 'cli' );
+		foreach ( $r['checks'] as $c ) {
+			\WP_CLI::log( sprintf( '[%-4s] %-9s %s%s', strtoupper( $c['status'] ), $c['section'], $c['label'], '' !== $c['detail'] ? ' – ' . $c['detail'] : '' ) );
+		}
+		\WP_CLI::success( sprintf( '%d checks, %d new findings (%.1fs).', count( $r['checks'] ), $r['new'], $r['duration'] ) );
+	}
+
+	/**
+	 * Clean, quarantine or ignore open findings.
+	 *
+	 * ## OPTIONS
+	 * [<id>...]
+	 * : Finding ids (see "wp ironveil scan").
+	 * [--action=<action>]
+	 * : clean | quarantine | ignore. Default: clean.
+	 * [--min-severity=<n>]
+	 * : Instead of ids, act on every open finding with at least this severity (1-4).
+	 * [--fallback]
+	 * : Quarantine files that cannot be cleaned safely.
+	 *
+	 * ## EXAMPLES
+	 *     wp ironveil clean 12 15
+	 *     wp ironveil clean --min-severity=4 --fallback
+	 */
+	public function clean( $args, $assoc ) {
+		$action = $assoc['action'] ?? 'clean';
+		if ( ! in_array( $action, array( 'clean', 'quarantine', 'ignore' ), true ) ) {
+			\WP_CLI::error( 'Action must be clean, quarantine or ignore.' );
+		}
+		$ids = array_map( 'absint', $args );
+		if ( ! $ids && isset( $assoc['min-severity'] ) ) {
+			foreach ( Scanner::issues( 'open', 1000 ) as $i ) {
+				if ( (int) $i->severity >= (int) $assoc['min-severity'] ) {
+					$ids[] = (int) $i->id;
+				}
+			}
+		}
+		if ( ! $ids ) {
+			\WP_CLI::error( 'Give finding ids or --min-severity.' );
+		}
+		$r = Cleaner::bulk( $ids, $action, ! empty( $assoc['fallback'] ) );
+		foreach ( $r['failed'] as $f ) {
+			\WP_CLI::warning( $f[0] . ' – ' . $f[1] );
+		}
+		foreach ( $r['skipped'] as $f ) {
+			\WP_CLI::log( 'Manual: ' . $f[0] . ' – ' . $f[1] );
+		}
+		\WP_CLI::success( sprintf( '%d done, %d failed, %d manual, %d left.', $r['done'], count( $r['failed'] ), count( $r['skipped'] ), $r['left'] ) );
+	}
+
+	/**
+	 * Clear a verification lockout (after too many invalid codes) for a user.
+	 *
+	 * ## OPTIONS
+	 * <user>
+	 * : User login, email or ID.
+	 *
+	 * @subcommand unlock-verify
+	 */
+	public function unlock_verify( $args ) {
+		$u = is_numeric( $args[0] ) ? get_user_by( 'id', (int) $args[0] ) : ( get_user_by( 'login', $args[0] ) ? get_user_by( 'login', $args[0] ) : get_user_by( 'email', $args[0] ) );
+		if ( ! $u ) {
+			\WP_CLI::error( 'User not found.' );
+		}
+		delete_user_meta( $u->ID, Verify::FAIL_META );
+		delete_user_meta( $u->ID, Verify::EMAIL_META );
+		Log::add( 'verify_unlocked', sprintf( 'Verification lockout cleared via WP-CLI for %s', $u->user_login ), Log::WARNING );
+		\WP_CLI::success( 'Verification unlocked for ' . $u->user_login );
+	}
+
+	/**
+	 * Refresh the threat-intelligence IP feeds now.
+	 *
+	 * @subcommand update-feeds
+	 */
+	public function update_feeds() {
+		foreach ( Threat_Feeds::update() as $k => $s ) {
+			\WP_CLI::log( sprintf( '%s: %d networks%s', $k, (int) ( $s['count'] ?? 0 ), ! empty( $s['error'] ) ? ' – ' . $s['error'] : '' ) );
+		}
+		\WP_CLI::success( 'Done.' );
+	}
+
 }

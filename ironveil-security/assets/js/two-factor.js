@@ -8,9 +8,22 @@
 	}
 	var msg = box.querySelector( '.ironveil-2fa-msg' );
 
-	function say( text, ok ) {
+	function say( text, ok, link ) {
 		msg.textContent = text || '';
 		msg.className = 'ironveil-2fa-msg ' + ( ok ? 'is-ok' : 'is-err' );
+		if ( link && /^https?:\/\//.test( link ) ) {
+			var a = document.createElement( 'a' );
+			a.href = link;
+			a.className = 'button button-small';
+			a.textContent = cfg.i18n.verify || 'Verify now';
+			msg.appendChild( document.createTextNode( ' ' ) );
+			msg.appendChild( a );
+		}
+	}
+
+	function fail( r ) {
+		var d = ( r && r.data ) || {};
+		return say( d.message || cfg.i18n.error, false, d.verify_url );
 	}
 
 	function call( action, data ) {
@@ -18,7 +31,9 @@
 		body.append( 'action', action );
 		body.append( 'nonce', cfg.nonce );
 		Object.keys( data || {} ).forEach( function ( k ) { body.append( k, data[ k ] ); } );
-		return fetch( cfg.ajax, { method: 'POST', credentials: 'same-origin', body: body } ).then( function ( r ) { return r.json(); } );
+		return fetch( cfg.ajax, { method: 'POST', credentials: 'same-origin', body: body } )
+			.then( function ( r ) { return r.json(); } )
+			.catch( function () { return { success: false, data: {} }; } );
 	}
 
 	function codeValue() {
@@ -44,8 +59,9 @@
 		if ( t.classList.contains( 'ironveil-2fa-begin' ) ) {
 			e.preventDefault();
 			call( 'ironveil_2fa_begin' ).then( function ( r ) {
-				if ( ! r.success ) { return say( cfg.i18n.error ); }
+				if ( ! r.success ) { return fail( r ); }
 				var setup = box.querySelector( '.ironveil-2fa-setup' );
+
 				setup.hidden = false;
 				t.hidden = true;
 				box.querySelector( '.ironveil-secret' ).textContent = r.data.secret;
@@ -64,14 +80,14 @@
 		if ( t.classList.contains( 'ironveil-2fa-enable' ) ) {
 			e.preventDefault();
 			call( 'ironveil_2fa_enable', { code: codeValue() } ).then( function ( r ) {
-				if ( ! r.success ) { return say( ( r.data && r.data.message ) || cfg.i18n.error ); }
+				if ( ! r.success ) { return fail( r ); }
 				showCodes( r.data.codes );
 			} );
 		}
 		if ( t.classList.contains( 'ironveil-2fa-recovery' ) ) {
 			e.preventDefault();
 			call( 'ironveil_2fa_recovery', { code: codeValue() } ).then( function ( r ) {
-				if ( ! r.success ) { return say( ( r.data && r.data.message ) || cfg.i18n.error ); }
+				if ( ! r.success ) { return fail( r ); }
 				showCodes( r.data.codes );
 			} );
 		}
@@ -80,7 +96,7 @@
 			if ( ! window.confirm( cfg.i18n.confirmDisable ) ) { return; }
 			var data = box.getAttribute( 'data-self' ) === '1' ? { code: codeValue() } : { user: box.getAttribute( 'data-user' ) };
 			call( 'ironveil_2fa_disable', data ).then( function ( r ) {
-				if ( ! r.success ) { return say( ( r.data && r.data.message ) || cfg.i18n.error ); }
+				if ( ! r.success ) { return fail( r ); }
 				window.location.reload();
 			} );
 		}

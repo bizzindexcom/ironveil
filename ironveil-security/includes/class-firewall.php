@@ -149,9 +149,26 @@ final class Firewall {
 			'query'  => self::flatten( $_GET ), // phpcs:ignore WordPress.Security.NonceVerification.Recommended
 			'body'   => self::flatten( $_POST ), // phpcs:ignore WordPress.Security.NonceVerification.Missing
 			'cookie' => self::flatten( self::filtered_cookies() ),
+			'raw'    => in_array( 'xxe', $enabled, true ) ? self::raw_body() : array(),
 		);
 
+
+		// SSRF also covers loopback URLs, unless the site itself runs on a loopback host (local development).
+		if ( in_array( 'ssrf', $enabled, true ) && ! self::site_is_local() ) {
+			$enabled[] = 'ssrf_local';
+		}
+
 		foreach ( $enabled as $group ) {
+			if ( 'protocol' === $group ) {
+				$bad = self::protocol_violation( $path, $ua );
+				if ( $bad ) {
+					return array(
+						'group'  => 'protocol',
+						'detail' => 'Protocol violation: ' . $bad,
+					);
+				}
+				continue;
+			}
 			if ( 'uploads' === $group ) {
 				$bad = self::inspect_uploads();
 				if ( $bad ) {
@@ -172,7 +189,7 @@ final class Firewall {
 					if ( isset( $skip_param[ strtolower( $name ) ] ) || isset( $rule['skip'][ strtolower( $name ) ] ) ) {
 						continue;
 					}
-					$norm = Waf_Rules::normalize( $value, 'sqli' === $group );
+					$norm = Waf_Rules::normalize( $value, 'sqli' === $group, $rule['raw'] );
 					if ( '' === $norm ) {
 						continue;
 					}
@@ -195,7 +212,79 @@ final class Firewall {
 	}
 
 	/**
+	 * Raw request body for XML / SOAP / non-form requests (XML-RPC, REST XML),
+	 * which never appear in $_POST. Read at most 64 KB.
+	 *
+	 * @return array[]
+	 */
+	private static function raw_body() {
+		$method = isset( $_SERVER['REQUEST_METHOD'] ) ? strtoupper( (string) $_SERVER['REQUEST_METHOD'] ) : 'GET'; // phpcs:ignore WordPress.Security.ValidatedSanitizedInput
+		if ( in_array( $method, array( 'GET', 'HEAD', 'OPTIONS' ), true ) ) {
+			return array();
+		}
+		$type = isset( $_SERVER['CONTENT_TYPE'] ) ? strtolower( (string) $_SERVER['CONTENT_TYPE'] ) : ''; // phpcs:ignore WordPress.Security.ValidatedSanitizedInput
+		if ( false === strpos( $type, 'xml' ) && false === strpos( $type, 'soap' ) && ! empty( $_POST ) ) { // phpcs:ignore WordPress.Security.NonceVerification.Missing
+			return array();
+		}
+		if ( false !== strpos( $type, 'multipart/form-data' ) ) {
+			return array();
+		}
+		$raw = (string) @file_get_contents( 'php://input', false, null, 0, 65536 ); // phpcs:ignore WordPress.PHP.NoSilencedErrors.Discouraged,WordPress.WP.AlternativeFunctions.file_get_contents_file_get_contents
+		return '' === $raw ? array() : array( array( 'body', $raw ) );
+	}
+
+	/**
+	 * Does the site itself run on a loopback / private host?
+	 *
+	 * @return bool
+	 */
+	private static function site_is_local() {
+		$host = strtolower( (string) wp_parse_url( (string) get_option( 'home' ), PHP_URL_HOST ) );
+		if ( '' === $host || 'localhost' === $host || '.localhost' === substr( $host, -10 ) || '.local' === substr( $host, -6 ) || '.test' === substr( $host, -5 ) ) {
+			return true;
+		}
+		$ip = IP::normalize( trim( $host, '[]' ) );
+		return $ip && IP::in_ranges( $ip, IP::parse_list( IP::PRIVATE_RANGES ) );
+	}
+
+	/**
+	 * HTTP protocol enforcement (OWASP CRS "protocol" rules, high-confidence subset).
+	 *
+	 * @param string $path Path.
+	 * @param string $ua   User agent.
+	 * @return string|null Reason.
+	 */
+	private static function protocol_violation( $path, $ua ) {
+		// phpcs:disable WordPress.Security.ValidatedSanitizedInput
+		$method = isset( $_SERVER['REQUEST_METHOD'] ) ? strtoupper( (string) $_SERVER['REQUEST_METHOD'] ) : 'GET';
+		if ( ! in_array( $method, array( 'GET', 'POST', 'HEAD', 'PUT', 'PATCH', 'DELETE', 'OPTIONS' ), true ) ) {
+			return 'method ' . substr( preg_replace( '/[^A-Z_-]/', '', $method ), 0, 20 );
+		}
+		$uri = isset( $_SERVER['REQUEST_URI'] ) ? (string) $_SERVER['REQUEST_URI'] : '';
+		if ( strlen( $uri ) > 8192 ) {
+			return 'oversized URL';
+		}
+		if ( false !== strpos( rawurldecode( rawurldecode( $uri ) ), "\0" ) ) {
+			return 'null byte in URL';
+		}
+		$host = isset( $_SERVER['HTTP_HOST'] ) ? (string) $_SERVER['HTTP_HOST'] : '';
+		if ( '' !== $host && ! preg_match( '/^[A-Za-z0-9.\-:\[\]_]{1,255}$/', $host ) ) {
+			return 'malformed Host header';
+		}
+		$script = isset( $_SERVER['SCRIPT_FILENAME'] ) ? basename( (string) $_SERVER['SCRIPT_FILENAME'] ) : '';
+		// phpcs:enable
+		if ( 'POST' === $method && '' === trim( $ua ) && in_array( $script, array( 'wp-login.php', 'xmlrpc.php', 'wp-comments-post.php' ), true ) ) {
+			return 'POST without user agent to ' . $script;
+		}
+		if ( preg_match( '~/\.\.?(?:/|$)~', $path ) && false !== strpos( $path, '/../' ) ) {
+			return 'path traversal in URL path';
+		}
+		return null;
+	}
+
+	/**
 	 * Flatten nested request data into [ top-level name, value ] pairs.
+
 	 * Parameter names (keys) are inspected too, since payloads can hide there.
 	 *
 	 * @param array $data Data.

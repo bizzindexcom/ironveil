@@ -31,13 +31,16 @@ final class Blocklist {
 	 * @return array|null { reason, expires }
 	 */
 	public static function match( $ip ) {
-		$cache = get_option( self::CACHE_OPTION );
-		if ( ! is_array( $cache ) || empty( $cache['n'] ) ) {
-			return null;
-		}
 		$hex = IP::to_hex( $ip );
 		if ( '' === $hex ) {
 			return null;
+		}
+		$cache = get_option( self::CACHE_OPTION );
+		if ( ! is_array( $cache ) || empty( $cache['n'] ) ) {
+			return Threat_Feeds::match( $hex ) ? array(
+				'reason'  => 'threat feed',
+				'expires' => 0,
+			) : null;
 		}
 		$now = time();
 		if ( isset( $cache['e'][ $hex ] ) ) {
@@ -58,6 +61,12 @@ final class Blocklist {
 					);
 				}
 			}
+		}
+		if ( Threat_Feeds::match( $hex ) ) {
+			return array(
+				'reason'  => 'threat feed',
+				'expires' => 0,
+			);
 		}
 		return null;
 	}
@@ -142,7 +151,9 @@ final class Blocklist {
 		$table = self::table();
 		$wpdb->query( $wpdb->prepare( "DELETE FROM {$table} WHERE expires > 0 AND expires < %d", time() ) ); // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared,WordPress.DB.DirectDatabaseQuery
 		self::rebuild_cache();
+		Threat_Feeds::rebuild_cache();
 	}
+
 
 	/**
 	 * Rebuild the compact autoloaded cache from the table.
@@ -150,7 +161,8 @@ final class Blocklist {
 	public static function rebuild_cache() {
 		global $wpdb;
 		$table = self::table();
-		$rows  = $wpdb->get_results( $wpdb->prepare( "SELECT ip_from, ip_to, reason, expires FROM {$table} WHERE expires = 0 OR expires > %d ORDER BY expires = 0 DESC, expires DESC LIMIT %d", time(), self::MAX_CACHED ), ARRAY_N ); // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared,WordPress.DB.DirectDatabaseQuery
+		// Threat-feed networks live in their own compact cache (Threat_Feeds::rebuild_cache()).
+		$rows  = $wpdb->get_results( $wpdb->prepare( "SELECT ip_from, ip_to, reason, expires FROM {$table} WHERE ( expires = 0 OR expires > %d ) AND SUBSTR(source, 1, 5) <> 'feed:' ORDER BY expires = 0 DESC, expires DESC LIMIT %d", time(), self::MAX_CACHED ), ARRAY_N ); // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared,WordPress.DB.DirectDatabaseQuery
 		$cache = array(
 			'n' => 0,
 			'e' => array(),
@@ -180,8 +192,10 @@ final class Blocklist {
 		global $wpdb;
 		$table  = self::table();
 		$offset = max( 0, ( (int) $page - 1 ) * $per_page );
-		$total  = (int) $wpdb->get_var( $wpdb->prepare( "SELECT COUNT(*) FROM {$table} WHERE expires = 0 OR expires > %d", time() ) ); // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared,WordPress.DB.DirectDatabaseQuery
-		$rows   = $wpdb->get_results( $wpdb->prepare( "SELECT * FROM {$table} WHERE expires = 0 OR expires > %d ORDER BY created DESC LIMIT %d OFFSET %d", time(), (int) $per_page, $offset ) ); // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared,WordPress.DB.DirectDatabaseQuery
+		// Threat-feed networks are summarised separately (thousands of rows).
+		$total  = (int) $wpdb->get_var( $wpdb->prepare( "SELECT COUNT(*) FROM {$table} WHERE ( expires = 0 OR expires > %d ) AND SUBSTR(source, 1, 5) <> 'feed:'", time() ) ); // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared,WordPress.DB.DirectDatabaseQuery
+		$rows   = $wpdb->get_results( $wpdb->prepare( "SELECT * FROM {$table} WHERE ( expires = 0 OR expires > %d ) AND SUBSTR(source, 1, 5) <> 'feed:' ORDER BY created DESC LIMIT %d OFFSET %d", time(), (int) $per_page, $offset ) ); // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared,WordPress.DB.DirectDatabaseQuery
+
 		return array(
 			'rows'  => $rows,
 			'total' => $total,

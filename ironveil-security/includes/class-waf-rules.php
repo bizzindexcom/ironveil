@@ -33,7 +33,8 @@ final class Waf_Rules {
 					'\bwaitfor\s+delay\s+[\'"]',
 					'\bload_file\s*\(',
 					'\binto\s+(?:out|dump)file\s+[\'"]',
-					'(?:[\'"`)]|\d)\s*(?:or|and|\|\||&&)\s+[\'"`(]?\s*(\w+)\s*[\'"`)]?\s*=\s*[\'"`(]?\s*\1\b\s*(?:--|#|;|$)',
+					'(?:[\'"`)]|\d)\s*(?:or|and|\|\||&&)\s+[\'"`(]?\s*(\w+)\s*[\'"`)]?\s*=\s*[\'"`(]?\s*\1\b[\'"`)]?\s*(?:--|#|;|$)',
+
 					'[\'"`)]\s*(?:or|and)\s+\d+\s*(?:=|<|>)\s*\d+\s*(?:--|#|$)',
 					'\b(?:extractvalue|updatexml)\s*\(\s*\d',
 					';\s*(?:drop|truncate|alter)\s+table\b',
@@ -85,8 +86,45 @@ final class Waf_Rules {
 					'\bcall_user_func(?:_array)?\s*\(\s*[\'"]?(?:system|exec|passthru|assert)',
 					'\{\{.*?(?:_self\.env|registerundefinedfiltercallback|\[\s*[\'"]__class__)',
 					'(?:^|[\[.])__proto__(?:$|[\[.=\]])',
+					// Remote file inclusion: a URL ending in "?" so the appended ".php" is ignored.
+					'^(?:https?|ftps?)://[^\s?#]+\.(?:txt|gif|jpe?g|png|php)\?{1,2}$',
 				),
 			),
+			'ssrf'       => array(
+				'targets'  => array( 'query', 'body', 'cookie' ),
+				'patterns' => array(
+					// Cloud metadata services (credential theft through server-side requests).
+					'(?:https?|ftp|gopher|dict|ldap|tftp)://(?:[^/\s@]*@)?\[?(?:169\.254\.169\.254|169\.254\.170\.2|fd00:ec2::254|100\.100\.100\.200|metadata\.google\.internal|metadata\.azure\.com|instance-data(?:\.ec2\.internal)?)(?:[\]:/?#\s]|$)',
+					// Protocol smuggling schemes used to talk to internal services.
+					'\b(?:gopher|dict|ldap|tftp|jar|netdoc)://',
+				),
+			),
+			// Evaluated together with "ssrf", except on sites that themselves run on a loopback host.
+			'ssrf_local' => array(
+				'targets'  => array( 'query', 'body', 'cookie' ),
+				'patterns' => array(
+					'(?:https?)://(?:[^/\s@]*@)?(?:127\.\d{1,3}\.\d{1,3}\.\d{1,3}|0\.0\.0\.0|0x7f[0-9a-f.x]*|2130706433|0177\.0*\.0*\.0*1|\[(?:0*:)+0*1\]|\[::\]|localhost)(?::\d{1,5})?(?:[/?#]|$)',
+				),
+			),
+
+			'xxe'        => array(
+				'targets'  => array( 'query', 'body', 'raw' ),
+				'patterns' => array(
+					'<!ENTITY\s+%?\s*[\w.:-]+\s+(?:SYSTEM|PUBLIC)\b',
+					'<!DOCTYPE[^>\[]{0,300}\[\s*<!(?:ENTITY|ELEMENT)',
+					'<xi:include\b[^>]{0,200}\bhref\s*=',
+				),
+			),
+			'crlf'       => array(
+				'targets'  => array( 'path', 'query', 'cookie' ),
+				'raw'      => true, // Keep CR/LF: normalisation would turn them into spaces.
+				'patterns' => array(
+					'[\r\n]\s*(?:set-cookie|location|content-(?:type|length|disposition)|refresh|x-[\w-]+|access-control-[\w-]+|link)\s*:',
+					'[\r\n]\s*<(?:html|script|body)',
+					'%0[ad]',
+				),
+			),
+
 			'objinj'     => array(
 				'targets'  => array( 'query', 'body', 'cookie' ),
 				'patterns' => array(
@@ -132,6 +170,7 @@ final class Waf_Rules {
 					'regex'   => '~(?|' . implode( '|', array_map( array( __CLASS__, 'wrap' ), $def['patterns'] ) ) . ')~isS',
 					'targets' => array_flip( $def['targets'] ),
 					'skip'    => isset( $def['skip'] ) ? array_flip( $def['skip'] ) : array(),
+					'raw'     => ! empty( $def['raw'] ),
 				);
 			}
 		}
@@ -149,11 +188,12 @@ final class Waf_Rules {
 	/**
 	 * Normalise an input value for matching (defeats common encodings).
 	 *
-	 * @param string $v Raw value.
-	 * @param bool   $sql Also strip SQL comments.
+	 * @param string $v        Raw value.
+	 * @param bool   $sql      Also strip SQL comments.
+	 * @param bool   $keep_ws  Keep CR/LF (header-injection rules need them).
 	 * @return string
 	 */
-	public static function normalize( $v, $sql = false ) {
+	public static function normalize( $v, $sql = false, $keep_ws = false ) {
 		$v = (string) $v;
 		for ( $i = 0; $i < 3 && false !== strpos( $v, '%' ); $i++ ) {
 			$d = rawurldecode( $v );
@@ -175,7 +215,11 @@ final class Waf_Rules {
 				$v
 			);
 		}
+		if ( $keep_ws ) {
+			return str_replace( "\0", '', $v );
+		}
 		$v = str_replace( array( "\0", "\t", "\r", "\n", "\x0b", "\x0c" ), array( '', ' ', ' ', ' ', ' ', ' ' ), $v );
+
 		if ( $sql ) {
 			$v = preg_replace( '~/\*!?\d*|\*/~', ' ', $v ); // MySQL comment / version-comment obfuscation.
 		}

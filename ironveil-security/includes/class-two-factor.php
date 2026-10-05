@@ -53,7 +53,9 @@ final class Two_Factor {
 	 * @return \WP_Error
 	 */
 	public static function expired_message( $errors ) {
-		if ( isset( $_GET['ironveil_2fa_expired'] ) && $errors instanceof \WP_Error ) { // phpcs:ignore WordPress.Security.NonceVerification.Recommended
+		if ( isset( $_GET['ironveil_2fa_locked'] ) && $errors instanceof \WP_Error ) { // phpcs:ignore WordPress.Security.NonceVerification.Recommended
+			$errors->add( 'ironveil_2fa_locked', esc_html__( 'Too many invalid two-factor codes. Code checks for this account are paused for 15 minutes.', 'ironveil-security' ) );
+		} elseif ( isset( $_GET['ironveil_2fa_expired'] ) && $errors instanceof \WP_Error ) { // phpcs:ignore WordPress.Security.NonceVerification.Recommended
 			$errors->add( 'ironveil_2fa_expired', esc_html__( 'Your two-factor session expired or was cancelled. Please log in again.', 'ironveil-security' ) );
 		}
 		return $errors;
@@ -198,8 +200,16 @@ final class Two_Factor {
 		if ( isset( $_SERVER['REQUEST_METHOD'] ) && 'POST' === $_SERVER['REQUEST_METHOD'] ) {
 			$posted = isset( $_POST['ironveil_token'] ) ? sanitize_text_field( wp_unslash( $_POST['ironveil_token'] ) ) : ''; // phpcs:ignore WordPress.Security.NonceVerification.Missing -- token double-submit acts as CSRF protection.
 			$code   = isset( $_POST['ironveil_code'] ) ? sanitize_text_field( wp_unslash( $_POST['ironveil_code'] ) ) : ''; // phpcs:ignore WordPress.Security.NonceVerification.Missing
-			if ( hash_equals( $token, $posted ) && self::check_code( $user->ID, $code ) ) {
+			// Per-account limit across challenges: restarting the login cannot buy more guesses.
+			$locked = Verify::locked_for( $user->ID );
+			if ( ! $locked && hash_equals( $token, $posted ) && self::check_code( $user->ID, $code ) ) {
 				self::complete( $user, $pending );
+			}
+			if ( ! $locked ) {
+				Verify::record_failure( $user->ID, '2fa_login' );
+			}
+			if ( Verify::locked_for( $user->ID ) ) {
+				$pending['tries'] = self::MAX_ATTEMPTS;
 			}
 			++$pending['tries'];
 			if ( $pending['tries'] >= self::MAX_ATTEMPTS ) {
@@ -207,8 +217,9 @@ final class Two_Factor {
 				self::set_cookie( self::CH_COOKIE, '', time() - YEAR_IN_SECONDS );
 				Log::add( '2fa_failed', 'Too many invalid 2FA codes; challenge cancelled', Log::WARNING, array(), $user->ID );
 				do_action( 'wp_login_failed', $user->user_login, new \WP_Error( 'ironveil_2fa_failed' ) );
-				wp_safe_redirect( add_query_arg( 'ironveil_2fa_expired', '1', wp_login_url() ) );
+				wp_safe_redirect( add_query_arg( Verify::locked_for( $user->ID ) ? 'ironveil_2fa_locked' : 'ironveil_2fa_expired', '1', wp_login_url() ) );
 				exit;
+
 			}
 			update_user_meta( $user->ID, 'ironveil_2fa_pending', $pending );
 			Log::add( '2fa_invalid', 'Invalid 2FA code', Log::NOTICE, array(), $user->ID );
@@ -276,6 +287,7 @@ final class Two_Factor {
 		self::set_cookie( self::CH_COOKIE, '', time() - YEAR_IN_SECONDS );
 		wp_set_auth_cookie( $user->ID, ! empty( $pending['remember'] ), is_ssl() );
 		wp_set_current_user( $user->ID );
+		Verify::login_verified( $user ); // A two-factor login is a fresh identity verification.
 
 		$days = (int) Settings::get( 'twofa_remember_days' );
 		if ( $days > 0 && ! empty( $_POST['ironveil_remember'] ) ) { // phpcs:ignore WordPress.Security.NonceVerification.Missing
@@ -383,11 +395,15 @@ final class Two_Factor {
 		if ( wp_doing_ajax() || ! is_user_logged_in() ) {
 			return;
 		}
+		global $pagenow;
+		// phpcs:ignore WordPress.Security.NonceVerification.Recommended
+		if ( 'admin-post.php' === $pagenow && isset( $_REQUEST['action'] ) && in_array( $_REQUEST['action'], array( Verify::ACTION, 'ironveil_bug_report' ), true ) ) {
+			return; // Verification and bug reports must stay reachable.
+		}
 		$user = wp_get_current_user();
 		if ( ! self::required( $user ) || self::enabled( $user->ID ) ) {
 			return;
 		}
-		global $pagenow;
 		if ( 'profile.php' !== $pagenow ) {
 			wp_safe_redirect( admin_url( 'profile.php?ironveil_2fa_required=1#ironveil-2fa' ) );
 			exit;
@@ -424,6 +440,8 @@ final class Two_Factor {
 					'confirmDisable' => __( 'Disable two-factor authentication?', 'ironveil-security' ),
 					'saveCodes'      => __( 'Save these recovery codes somewhere safe. Each can be used once. They will not be shown again.', 'ironveil-security' ),
 					'error'          => __( 'Something went wrong. Reload and try again.', 'ironveil-security' ),
+					'verify'         => __( 'Verify now', 'ironveil-security' ),
+
 				),
 			)
 		);
@@ -490,10 +508,53 @@ final class Two_Factor {
 	}
 
 	/**
+	 * Two-factor changes on an administrator account need a verified session
+	 * (unless the account has no way to verify yet, i.e. first-time setup
+	 * with emailed codes disabled).
+	 *
+	 * @param \WP_User $user User.
+	 */
+	private static function ajax_require_verified( $user ) {
+		if ( Verify::required_for( $user ) && Verify::can_verify( $user->ID ) && ! Verify::is_verified() ) {
+			wp_send_json_error(
+				array(
+					'message'    => __( 'For your protection, verify your identity first, then try again.', 'ironveil-security' ),
+					'verify_url' => Verify::url( admin_url( 'profile.php#ironveil-2fa' ) ),
+				),
+				403
+			);
+		}
+	}
+
+	/**
+	 * Rate-limited code check for profile actions.
+	 *
+	 * @param int    $user_id User.
+	 * @param string $code    Code.
+	 * @param string $context Context.
+	 * @return bool
+	 */
+	private static function limited_check( $user_id, $code, $context ) {
+		if ( Verify::locked_for( $user_id ) ) {
+			return false;
+		}
+		if ( self::check_code( $user_id, $code ) ) {
+			return true;
+		}
+		Verify::record_failure( $user_id, $context );
+		return false;
+	}
+
+	/**
 	 * Start setup: create a pending secret (encrypted) and return it once.
 	 */
 	public static function ajax_begin() {
-		$user   = self::ajax_user();
+		$user = self::ajax_user();
+		if ( self::enabled( $user->ID ) ) {
+			// Replacing a working secret would let a hijacked session take over the second factor.
+			wp_send_json_error( array( 'message' => __( 'Two-factor authentication is already enabled. Disable it first (this requires a current code).', 'ironveil-security' ) ) );
+		}
+		self::ajax_require_verified( $user );
 		$secret = Totp::generate_secret();
 		update_user_meta( $user->ID, 'ironveil_2fa_setup', Crypto::encrypt( $secret . '|' . time() ) );
 		$issuer = wp_specialchars_decode( get_bloginfo( 'name' ), ENT_QUOTES );
@@ -509,7 +570,14 @@ final class Two_Factor {
 	 * Confirm setup with a valid code.
 	 */
 	public static function ajax_enable() {
-		$user  = self::ajax_user();
+		$user = self::ajax_user();
+		if ( self::enabled( $user->ID ) ) {
+			wp_send_json_error( array( 'message' => __( 'Two-factor authentication is already enabled.', 'ironveil-security' ) ) );
+		}
+		self::ajax_require_verified( $user );
+		if ( Verify::locked_for( $user->ID ) ) {
+			wp_send_json_error( array( 'message' => __( 'Too many invalid codes. Wait 15 minutes and try again.', 'ironveil-security' ) ) );
+		}
 		$blob  = Crypto::decrypt( get_user_meta( $user->ID, 'ironveil_2fa_setup', true ) );
 		$parts = $blob ? explode( '|', $blob ) : array();
 		if ( 2 !== count( $parts ) || (int) $parts[1] < time() - 30 * MINUTE_IN_SECONDS ) {
@@ -518,6 +586,7 @@ final class Two_Factor {
 		$code = isset( $_POST['code'] ) ? sanitize_text_field( wp_unslash( $_POST['code'] ) ) : '';
 		$step = Totp::verify( $parts[0], $code );
 		if ( false === $step ) {
+			Verify::record_failure( $user->ID, '2fa_setup' );
 			wp_send_json_error( array( 'message' => __( 'That code is not valid. Check your device clock and try again.', 'ironveil-security' ) ) );
 		}
 		update_user_meta( $user->ID, 'ironveil_2fa_secret', Crypto::encrypt( $parts[0] ) );
@@ -534,6 +603,7 @@ final class Two_Factor {
 	public static function ajax_disable() {
 		$user   = self::ajax_user();
 		$target = isset( $_POST['user'] ) ? absint( $_POST['user'] ) : 0;
+		self::ajax_require_verified( $user );
 		if ( $target && $target !== $user->ID ) {
 			if ( ! current_user_can( Plugin::cap() ) || ! current_user_can( 'edit_user', $target ) ) {
 				wp_send_json_error( array( 'message' => 'forbidden' ), 403 );
@@ -543,7 +613,7 @@ final class Two_Factor {
 			wp_send_json_success();
 		}
 		$code = isset( $_POST['code'] ) ? sanitize_text_field( wp_unslash( $_POST['code'] ) ) : '';
-		if ( ! self::check_code( $user->ID, $code ) ) {
+		if ( ! self::limited_check( $user->ID, $code, '2fa_disable' ) ) {
 			wp_send_json_error( array( 'message' => __( 'Enter a valid current code to disable 2FA.', 'ironveil-security' ) ) );
 		}
 		self::reset( $user->ID );
@@ -556,8 +626,10 @@ final class Two_Factor {
 	 */
 	public static function ajax_recovery() {
 		$user = self::ajax_user();
+		self::ajax_require_verified( $user );
 		$code = isset( $_POST['code'] ) ? sanitize_text_field( wp_unslash( $_POST['code'] ) ) : '';
-		if ( ! self::enabled( $user->ID ) || ! preg_match( '/^\d{6}$/', $code ) || ! self::check_code( $user->ID, $code ) ) {
+		if ( ! self::enabled( $user->ID ) || ! preg_match( '/^\d{6}$/', $code ) || ! self::limited_check( $user->ID, $code, '2fa_recovery' ) ) {
+
 			wp_send_json_error( array( 'message' => __( 'Enter a valid current code first.', 'ironveil-security' ) ) );
 		}
 		Log::add( '2fa_recovery_regen', 'Recovery codes regenerated', Log::NOTICE, array(), $user->ID );

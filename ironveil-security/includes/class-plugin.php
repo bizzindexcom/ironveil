@@ -37,8 +37,10 @@ final class Plugin {
 		load_plugin_textdomain( 'ironveil-security', false, dirname( IRONVEIL_BASENAME ) . '/languages' );
 		Installer::maybe_upgrade();
 
+		Bug_Report::init();
 		Login_Guard::init();
 		Two_Factor::init();
+		Verify::init();
 		Hardening::init();
 		Audit::init();
 		Notifier::init();
@@ -47,6 +49,7 @@ final class Plugin {
 		add_action( Installer::CRON_DAILY, array( __CLASS__, 'daily' ) );
 		add_action( Installer::CRON_SCAN, array( '\IronVeil\Scanner', 'scheduled' ) );
 		add_action( Installer::CRON_SCANSTEP, array( '\IronVeil\Scanner', 'cron_step' ) );
+		add_action( Server_Scan::CRON, array( '\IronVeil\Server_Scan', 'scheduled' ) );
 		add_action( 'ironveil_settings_saved', array( __CLASS__, 'settings_saved' ) );
 		add_action( 'template_redirect', array( __CLASS__, 'track_404' ), 999 );
 
@@ -70,6 +73,9 @@ final class Plugin {
 		if ( '' !== Signature_Feed::url() ) {
 			Signature_Feed::update();
 		}
+		if ( Settings::get( 'fw_threat_feeds' ) || Threat_Feeds::state() ) {
+			Threat_Feeds::update();
+		}
 	}
 
 	/**
@@ -80,7 +86,16 @@ final class Plugin {
 		Signatures::flush();
 		Installer::schedule();
 		Hardening::sync_server_rules();
+		// Apply threat-feed changes right away (enabling downloads the lists, disabling removes them).
+		$want = (array) Settings::get( 'fw_threat_feeds' );
+		$have = array_keys( Threat_Feeds::state() );
+		sort( $want );
+		sort( $have );
+		if ( $want !== $have ) {
+			Threat_Feeds::update();
+		}
 	}
+
 
 	/**
 	 * Count 404s by anonymous visitors; block scanners that exceed the limit.

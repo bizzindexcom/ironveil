@@ -21,15 +21,19 @@ function ironveil_uninstall_site() {
 		$wpdb->query( "DROP TABLE IF EXISTS {$wpdb->prefix}{$t}" ); // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared,WordPress.DB.DirectDatabaseQuery,WordPress.DB.DirectDatabaseQuery.SchemaChange
 	}
 	$wpdb->query( $wpdb->prepare( "DELETE FROM {$wpdb->options} WHERE option_name LIKE %s OR option_name LIKE %s OR option_name LIKE %s", 'ironveil%', '_transient_ironveil%', '_transient_timeout_ironveil%' ) ); // phpcs:ignore WordPress.DB.DirectDatabaseQuery
-	foreach ( array( 'ironveil_hourly', 'ironveil_daily', 'ironveil_scheduled_scan', 'ironveil_scan_step' ) as $hook ) {
+	foreach ( array( 'ironveil_hourly', 'ironveil_daily', 'ironveil_scheduled_scan', 'ironveil_scan_step', 'ironveil_server_scan' ) as $hook ) {
 		wp_clear_scheduled_hook( $hook );
 	}
+	require_once ABSPATH . 'wp-admin/includes/misc.php';
 	$up = wp_upload_dir( null, false );
 	if ( ! empty( $up['basedir'] ) && is_file( $up['basedir'] . '/.htaccess' ) ) {
-		require_once ABSPATH . 'wp-admin/includes/misc.php';
 		insert_with_markers( $up['basedir'] . '/.htaccess', 'IronVeil Security', array() );
 	}
+	if ( is_file( ABSPATH . '.htaccess' ) && false !== strpos( (string) file_get_contents( ABSPATH . '.htaccess' ), 'BEGIN IronVeil Server Protection' ) ) { // phpcs:ignore WordPress.WP.AlternativeFunctions.file_get_contents_file_get_contents
+		insert_with_markers( ABSPATH . '.htaccess', 'IronVeil Server Protection', array() );
+	}
 }
+
 
 if ( is_multisite() ) {
 	foreach ( get_sites( array( 'fields' => 'ids', 'number' => 0 ) ) as $ironveil_blog ) {
