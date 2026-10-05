@@ -1,0 +1,115 @@
+/* IronVeil Security – admin styles */
+.ironveil {
+	--iv-ink: #0f172a;
+	--iv-muted: #64748b;
+	--iv-line: #e2e8f0;
+	--iv-bg: #fff;
+	--iv-accent: #3730a3;
+	--iv-good: #15803d;
+	--iv-good-bg: #dcfce7;
+	--iv-warn: #b45309;
+	--iv-warn-bg: #fef3c7;
+	--iv-bad: #b91c1c;
+	--iv-bad-bg: #fee2e2;
+	max-width: 1280px;
+	color: var(--iv-ink);
+}
+.ironveil .iv-head { display: flex; align-items: center; gap: 16px; margin: 12px 0 8px; }
+.ironveil .iv-brand { display: flex; align-items: center; gap: 8px; font-weight: 700; font-size: 18px; color: var(--iv-accent); }
+.ironveil .iv-brand small { font-weight: 500; color: var(--iv-muted); font-size: 12px; }
+.ironveil .iv-title { margin: 0; padding: 0; font-size: 20px; font-weight: 600; border-left: 1px solid var(--iv-line); padding-left: 16px; }
+.ironveil .iv-tabs { display: flex; flex-wrap: wrap; gap: 4px; border-bottom: 1px solid var(--iv-line); margin: 8px 0 20px; }
+.ironveil .iv-tabs a { padding: 10px 14px; text-decoration: none; color: var(--iv-muted); border-bottom: 2px solid transparent; margin-bottom: -1px; font-weight: 500; }
+.ironveil .iv-tabs a:hover { color: var(--iv-ink); }
+.ironveil .iv-tabs a.is-active { color: var(--iv-accent); border-bottom-color: var(--iv-accent); }
+.ironveil .iv-tabs a:focus { box-shadow: 0 0 0 2px var(--iv-accent); outline: none; }
+.ironveil .iv-card { background: var(--iv-bg); border: 1px solid var(--iv-line); border-radius: 10px; padding: 18px 22px; margin-bottom: 20px; box-shadow: 0 1px 2px rgba(15, 23, 42, .04); }
+.ironveil .iv-card h2 { margin: 0 0 12px; font-size: 15px; font-weight: 600; }
+.ironveil .iv-mt { margin-top: 20px !important; }
+.ironveil .iv-grid { display: grid; grid-template-columns: 1.6fr repeat(3, 1fr); gap: 20px; }
+.ironveil .iv-grid .iv-card { margin-bottom: 20px; }
+.ironveil .iv-cols { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
+@media (max-width: 1100px) {
+	.ironveil .iv-grid { grid-template-columns: 1fr 1fr; }
+	.ironveil .iv-cols { grid-template-columns: 1fr; }
+}
+@media (max-width: 600px) {
+	.ironveil .iv-grid { grid-template-columns: 1fr; }
+}
+.ironveil .iv-score { display: flex; align-items: center; gap: 18px; }
+.ironveil .iv-score h2 { margin-bottom: 4px; }
+.ironveil .iv-score p { margin: 0; color: var(--iv-muted); }
+.ironveil .iv-ring { --c: var(--iv-good); width: 84px; height: 84px; border-radius: 50%; flex: none; display: grid; place-items: center; background: conic-gradient(var(--c) calc(var(--p) * 1%), var(--iv-line) 0); }
+.ironveil .iv-ring span { width: 66px; height: 66px; border-radius: 50%; background: #fff; display: grid; place-items: center; font-size: 22px; font-weight: 700; }
+.ironveil .iv-score.iv-warn .iv-ring { --c: var(--iv-warn); }
+.ironveil .iv-score.iv-bad .iv-ring { --c: var(--iv-bad); }
+.ironveil .iv-stat-v { font-size: 30px; font-weight: 700; line-height: 1.1; }
+.ironveil .iv-stat-l { color: var(--iv-muted); margin-top: 4px; }
+.ironveil .iv-stat-s { color: var(--iv-warn); font-size: 12px; margin-top: 4px; }
+.ironveil .iv-stat-a { display: inline-block; margin-top: 8px; font-size: 12px; }
+.ironveil .iv-stat.iv-bad .iv-stat-v { color: var(--iv-bad); }
+.ironveil .iv-stat.iv-good .iv-stat-v { color: var(--iv-good); }
+.ironveil .iv-checklist { margin: 0; }
+.ironveil .iv-checklist li { display: flex; gap: 10px; align-items: flex-start; padding: 8px 0; border-bottom: 1px solid var(--iv-line); margin: 0; }
+.ironveil .iv-checklist li:last-child { border-bottom: 0; }
+.ironveil .iv-checklist small { color: var(--iv-muted); }
+.ironveil .iv-dot { width: 10px; height: 10px; border-radius: 50%; margin-top: 5px; flex: none; }
+.ironveil .iv-good .iv-dot { background: var(--iv-good); }
+.ironveil .iv-warn .iv-dot { background: var(--iv-warn); }
+.ironveil .iv-bad .iv-dot { background: var(--iv-bad); }
+.ironveil .iv-banner { padding: 10px 14px; border-radius: 8px; margin: 0 0 16px; font-weight: 500; }
+.ironveil .iv-banner.iv-warn { background: var(--iv-warn-bg); color: var(--iv-warn); }
+.ironveil .iv-banner.iv-bad { background: var(--iv-bad-bg); color: var(--iv-bad); }
+.ironveil .iv-banner.iv-good { background: var(--iv-good-bg); color: var(--iv-good); }
+.ironveil .iv-pill { display: inline-block; padding: 2px 8px; border-radius: 999px; font-size: 11px; font-weight: 600; background: #f1f5f9; color: var(--iv-muted); white-space: nowrap; }
+.ironveil .iv-pill.iv-good { background: var(--iv-good-bg); color: var(--iv-good); }
+.ironveil .iv-pill.iv-warn { background: var(--iv-warn-bg); color: var(--iv-warn); }
+.ironveil .iv-pill.iv-bad, .ironveil .iv-sev-critical { background: var(--iv-bad-bg); color: var(--iv-bad); }
+.ironveil .iv-sev-high { background: #ffedd5; color: #c2410c; }
+.ironveil .iv-sev-medium, .ironveil .iv-lv-warning { background: var(--iv-warn-bg); color: var(--iv-warn); }
+.ironveil .iv-lv-critical { background: var(--iv-bad-bg); color: var(--iv-bad); }
+.ironveil .iv-lv-notice { background: #e0e7ff; color: var(--iv-accent); }
+.ironveil .iv-count { background: #f1f5f9; border-radius: 999px; padding: 1px 8px; font-size: 12px; color: var(--iv-muted); margin-left: 4px; }
+.ironveil .iv-table td, .ironveil .iv-table th { vertical-align: top; }
+.ironveil .iv-path { word-break: break-all; font-size: 12px; }
+.ironveil .iv-code { background: #0f172a; color: #e2e8f0; padding: 10px 12px; border-radius: 6px; overflow: auto; font-size: 12px; white-space: pre-wrap; word-break: break-all; }
+.ironveil .iv-actions form { display: inline-block; margin: 0 4px 4px 0; }
+.ironveil .iv-inline { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 6px; margin: 0 6px 12px 0; }
+.ironveil .iv-empty { font-size: 14px; color: var(--iv-good); }
+.ironveil .iv-progress { margin: 10px 0; }
+.ironveil .iv-bar { height: 8px; background: var(--iv-line); border-radius: 999px; overflow: hidden; }
+.ironveil .iv-bar span { display: block; height: 100%; width: 0; background: var(--iv-accent); transition: width .4s ease; }
+.ironveil .iv-stage { color: var(--iv-muted); margin: 6px 0 0; font-size: 12px; }
+.ironveil .iv-checks label { display: inline-block; min-width: 220px; margin: 0 12px 6px 0; }
+.ironveil .iv-switch { position: relative; display: inline-block; width: 40px; height: 22px; }
+.ironveil .iv-switch input { opacity: 0; width: 100%; height: 100%; position: absolute; margin: 0; cursor: pointer; z-index: 1; }
+.ironveil .iv-switch span { position: absolute; inset: 0; background: #cbd5e1; border-radius: 999px; transition: background .2s; }
+.ironveil .iv-switch span::after { content: ""; position: absolute; left: 3px; top: 3px; width: 16px; height: 16px; background: #fff; border-radius: 50%; transition: transform .2s; }
+.ironveil .iv-switch input:checked + span { background: var(--iv-accent); }
+.ironveil .iv-switch input:checked + span::after { transform: translateX(18px); }
+.ironveil .iv-switch input:focus-visible + span { box-shadow: 0 0 0 2px #fff, 0 0 0 4px var(--iv-accent); }
+@media (prefers-reduced-motion: reduce) {
+	.ironveil * { transition: none !important; }
+}
+
+/* Edition / licensing */
+.ironveil .iv-brand-text { display: flex; flex-direction: column; line-height: 1.2; }
+.ironveil .iv-author { font-size: 12px; font-weight: 500; color: var(--iv-muted); }
+.ironveil .iv-pill.iv-pro { background: #312e81; color: #fff; letter-spacing: .04em; }
+.ironveil .iv-banner.iv-upsell { background: #eef2ff; color: #312e81; display: flex; flex-wrap: wrap; align-items: center; gap: 10px; }
+.ironveil tr.iv-locked th, .ironveil tr.iv-locked td { opacity: .7; }
+.ironveil .iv-list { margin: 0 0 12px; }
+.ironveil .iv-list li { margin: 0 0 6px; }
+
+/* Profile 2FA box */
+.ironveil-2fa-box { max-width: 720px; background: #fff; border: 1px solid #dcdcde; border-radius: 8px; padding: 12px 18px; }
+.ironveil-2fa-box .ironveil-qr svg { width: 200px; height: 200px; display: block; margin: 8px 0; }
+.ironveil-2fa-box .ironveil-ok { color: #15803d; font-weight: 600; }
+.ironveil-2fa-box .ironveil-2fa-msg.is-err { color: #b91c1c; }
+.ironveil-2fa-box .ironveil-2fa-msg.is-ok { color: #15803d; }
+.ironveil-2fa-box .ironveil-codes pre { background: #f6f7f7; padding: 12px; font-size: 15px; line-height: 1.7; }
+
+/* Diff viewer */
+.ironveil .iv-diff { max-height: 70vh; overflow: auto; border: 1px solid var(--iv-line); border-radius: 8px; }
+.ironveil .iv-diff table.diff { width: 100%; font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 12px; }
+.ironveil .iv-diff td { white-space: pre-wrap; word-break: break-all; }
