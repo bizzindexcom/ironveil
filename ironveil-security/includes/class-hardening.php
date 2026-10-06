@@ -322,22 +322,6 @@ final class Hardening {
 		$reg      = get_option( 'users_can_register' ) && in_array( get_option( 'default_role' ), array( 'administrator', 'editor', 'shop_manager' ), true );
 		$c['reg'] = array( __( 'Open registration does not grant privileged roles', 'ironveil-security' ), $reg ? 'bad' : 'good', $reg ? __( 'Anyone can register as a privileged user! Fix Settings → General → New User Default Role.', 'ironveil-security' ) : '', 20 );
 
-		$admins  = get_users(
-			array(
-				'role'   => 'administrator',
-				'fields' => 'ID',
-				'number' => 200,
-			)
-		);
-		$no2fa   = 0;
-		foreach ( $admins as $id ) {
-			if ( ! Two_Factor::enabled( (int) $id ) ) {
-				++$no2fa;
-			}
-		}
-		/* translators: %d: count */
-		$c['2fa'] = array( __( 'All administrators use two-factor authentication', 'ironveil-security' ), $no2fa ? 'bad' : 'good', $no2fa ? sprintf( _n( '%d administrator without 2FA.', '%d administrators without 2FA.', $no2fa, 'ironveil-security' ), $no2fa ) : '', 15 );
-
 		$c['xmlrpc'] = array( __( 'XML-RPC disabled or restricted', 'ironveil-security' ), 'allow' === Settings::get( 'xmlrpc' ) ? 'warn' : 'good', '', 5 );
 
 		$c['prefix'] = array( __( 'Non-default database table prefix', 'ironveil-security' ), 'wp_' === $wpdb->prefix ? 'warn' : 'good', 'wp_' === $wpdb->prefix ? __( 'Low impact; change only on new installs.', 'ironveil-security' ) : '', 1 );

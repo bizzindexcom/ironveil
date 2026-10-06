@@ -3,9 +3,8 @@
  * Administrator identity verification ("sudo mode").
  *
  * One verification protects everything sensitive on an administrator account.
- * The administrator proves who they are once, with an authenticator code (or
- * a recovery code) or a one-time code emailed to the account address, and is
- * then trusted for a short window. The window is stored inside the WordPress
+ * The administrator proves who they are once, with a one-time code emailed to
+ * the account address, and is then trusted for a short window. The window is stored inside the WordPress
  * session itself, so it ends on logout, never transfers to a stolen cookie
  * from another session and is invisible to other devices.
  *
@@ -16,10 +15,8 @@
  *  - creating users, deleting users and changing roles;
  *  - saving any profile (email / password changes) and site settings;
  *  - content and personal-data export / erasure;
- *  - creating or deleting application passwords (REST);
- *  - two-factor changes (disable, reset, regenerate recovery codes).
+ *  - creating or deleting application passwords (REST).
  *
- * Signing in with two-factor authentication counts as a verification.
  * Failed attempts are rate limited per user (5 per 15 minutes) and logged.
  *
  * @package IronVeil
@@ -46,8 +43,8 @@ final class Verify {
 	/** Core AJAX actions that change code or users. */
 	const AJAX_ACTIONS = array( 'install-plugin', 'delete-plugin', 'install-theme', 'delete-theme', 'activate-plugin', 'deactivate-plugin', 'add-user', 'delete-user' );
 
-	/** @var string|null Session token issued during this request (login with 2FA). */
-	private static $fresh_token = null;
+	/** Emailed codes allowed per user per hour. */
+	const EMAIL_PER_HOUR = 6;
 
 	/**
 	 * Hooks.
@@ -61,7 +58,6 @@ final class Verify {
 		add_action( 'admin_init', array( __CLASS__, 'gate_request' ), 0 );
 		add_filter( 'rest_pre_dispatch', array( __CLASS__, 'gate_rest' ), 4, 3 );
 		add_action( 'admin_notices', array( __CLASS__, 'profile_notice' ) );
-		add_action( 'set_logged_in_cookie', array( __CLASS__, 'capture_token' ), 10, 6 );
 	}
 
 	/**
@@ -98,13 +94,12 @@ final class Verify {
 	 * Which methods can this user verify with?
 	 *
 	 * @param int $user_id User.
-	 * @return array { totp: bool, email: bool }
+	 * @return array { email: bool }
 	 */
 	public static function methods( $user_id ) {
 		$u = get_userdata( $user_id );
 		return array(
-			'totp'  => Two_Factor::enabled( $user_id ),
-			'email' => (bool) Settings::get( 'verify_email' ) && $u && is_email( $u->user_email ),
+			'email' => $u && is_email( $u->user_email ),
 		);
 	}
 
@@ -153,7 +148,7 @@ final class Verify {
 	 *
 	 * @param int    $user_id User.
 	 * @param string $token   Session token.
-	 * @param string $method  totp|recovery|email|2fa_login.
+	 * @param string $method  How the user verified (email).
 	 */
 	public static function mark_verified( $user_id, $token, $method ) {
 		if ( '' === (string) $token ) {
@@ -169,32 +164,6 @@ final class Verify {
 		delete_user_meta( $user_id, self::FAIL_META );
 		delete_user_meta( $user_id, self::EMAIL_META );
 		Log::add( 'verify_success', sprintf( 'Administrator identity verified (%s)', $method ), Log::INFO, array( 'method' => $method ), $user_id );
-	}
-
-	/**
-	 * Remember the session token created by wp_set_auth_cookie() in this request.
-	 *
-	 * @param string $c1    Cookie.
-	 * @param int    $c2    Expire.
-	 * @param int    $c3    Expiration.
-	 * @param int    $c4    User id.
-	 * @param string $c5    Scheme.
-	 * @param string $token Session token.
-	 */
-	public static function capture_token( $c1, $c2, $c3, $c4, $c5, $token ) {
-		self::$fresh_token = (string) $token;
-	}
-
-	/**
-	 * Called by Two_Factor after a successful second factor at login:
-	 * the login itself was a strong verification.
-	 *
-	 * @param \WP_User $user User.
-	 */
-	public static function login_verified( $user ) {
-		if ( self::enabled() && self::$fresh_token && self::required_for( $user ) ) {
-			self::mark_verified( $user->ID, self::$fresh_token, '2fa_login' );
-		}
 	}
 
 	/**
@@ -214,7 +183,7 @@ final class Verify {
 		}
 	}
 
-	// ------------------------------------------------------------------ Rate limiting (shared with Two_Factor).
+	// ------------------------------------------------------------------ Rate limiting.
 
 	/**
 	 * Seconds until the user may try a code again (0 = allowed).
@@ -258,7 +227,7 @@ final class Verify {
 	}
 
 	/**
-	 * Check a code with rate limiting. Accepts TOTP, recovery and emailed codes.
+	 * Check an emailed code with rate limiting.
 	 *
 	 * @param int    $user_id User.
 	 * @param string $code    Code.
@@ -273,12 +242,7 @@ final class Verify {
 		if ( '' === $code ) {
 			return false;
 		}
-		$method = false;
-		if ( Two_Factor::enabled( $user_id ) && Two_Factor::check_code( $user_id, $code ) ) {
-			$method = preg_match( '/^\s*\d{6}\s*$/', $code ) ? 'totp' : 'recovery';
-		} elseif ( self::check_email_code( $user_id, $code ) ) {
-			$method = 'email';
-		}
+		$method = self::check_email_code( $user_id, $code ) ? 'email' : false;
 		if ( ! $method ) {
 			self::record_failure( $user_id, $context );
 		}
@@ -304,7 +268,7 @@ final class Verify {
 	 */
 	public static function send_email_code( $user ) {
 		if ( ! self::methods( $user->ID )['email'] ) {
-			return new \WP_Error( 'ironveil_verify', __( 'Emailed codes are disabled. Use your authenticator app.', 'ironveil-security' ) );
+			return new \WP_Error( 'ironveil_verify', __( 'Your account has no valid email address. Ask another administrator to fix it.', 'ironveil-security' ) );
 		}
 		$pending = get_user_meta( $user->ID, self::EMAIL_META, true );
 		if ( is_array( $pending ) && (int) ( $pending['sent'] ?? 0 ) > time() - self::EMAIL_RESEND ) {
@@ -313,8 +277,8 @@ final class Verify {
 		// Cap emails per hour so a hijacked session cannot flood the inbox.
 		$hour_key = 'ironveil_verify_mails_' . $user->ID;
 		$sent_n   = (int) get_transient( $hour_key );
-		if ( $sent_n >= 6 ) {
-			return new \WP_Error( 'ironveil_verify', __( 'Too many codes were requested in the last hour. Use your authenticator app or try again later.', 'ironveil-security' ) );
+		if ( $sent_n >= self::EMAIL_PER_HOUR ) {
+			return new \WP_Error( 'ironveil_verify', __( 'Too many codes were requested in the last hour. Try again later.', 'ironveil-security' ) );
 		}
 		set_transient( $hour_key, $sent_n + 1, HOUR_IN_SECONDS );
 
@@ -342,7 +306,7 @@ final class Verify {
 		$sent = wp_mail( $user->user_email, sprintf( __( '[%s] Your IronVeil verification code', 'ironveil-security' ), $site ), $body );
 		if ( ! $sent ) {
 			delete_user_meta( $user->ID, self::EMAIL_META );
-			return new \WP_Error( 'ironveil_verify', __( 'The email could not be sent. Fix your site\'s email delivery (for example with an SMTP plugin) or set up two-factor authentication.', 'ironveil-security' ) );
+			return new \WP_Error( 'ironveil_verify', __( 'The email could not be sent. Fix your site\'s email delivery (for example with an SMTP plugin). In an emergency, define IRONVEIL_DISABLE_VERIFY in wp-config.php.', 'ironveil-security' ) );
 		}
 		Log::add( 'verify_code_sent', 'Verification code emailed', Log::INFO, array(), $user->ID );
 		return true;
@@ -658,23 +622,23 @@ final class Verify {
 		if ( $error ) {
 			echo '<div class="msg err" role="alert">' . esc_html( $error ) . '</div>';
 		}
-		if ( ! $methods['totp'] && ! $methods['email'] ) {
-			echo '<div class="msg err">' . esc_html__( 'No verification method is available: set up two-factor authentication on your profile, or ask another administrator to enable emailed codes.', 'ironveil-security' ) . '</div>';
-			echo '<p><a href="' . esc_url( admin_url( 'profile.php#ironveil-2fa' ) ) . '">' . esc_html__( 'Set up two-factor authentication', 'ironveil-security' ) . '</a></p>';
+		if ( ! $methods['email'] ) {
+			echo '<div class="msg err">' . esc_html__( 'Your account has no valid email address, so a verification code cannot be sent. Ask another administrator to fix it, or define IRONVEIL_DISABLE_VERIFY in wp-config.php.', 'ironveil-security' ) . '</div>';
 		} else {
 			$has_email_code = is_array( $pending ) && ! empty( $pending['hash'] ) && (int) $pending['exp'] > time();
-			if ( $methods['totp'] || $has_email_code ) {
+			if ( $has_email_code ) {
 				echo '<form method="post" action="' . esc_url( $action ) . '" autocomplete="off">';
 				wp_nonce_field( self::ACTION );
 				echo '<input type="hidden" name="do" value="verify">';
-				echo '<label for="iv-code">' . esc_html( $methods['totp'] ? ( $has_email_code ? __( 'Authenticator, recovery or emailed code', 'ironveil-security' ) : __( 'Code from your authenticator app (or a recovery code)', 'ironveil-security' ) ) : __( 'Code from the email', 'ironveil-security' ) ) . '</label>';
-				echo '<input type="text" id="iv-code" name="code" inputmode="numeric" autocomplete="one-time-code" maxlength="16" required autofocus>';
+				echo '<label for="iv-code">' . esc_html__( 'Code from the email', 'ironveil-security' ) . '</label>';
+				echo '<input type="text" id="iv-code" name="code" inputmode="numeric" autocomplete="one-time-code" maxlength="6" required autofocus>';
 				echo '<button class="primary" type="submit">' . esc_html__( 'Verify', 'ironveil-security' ) . '</button></form>';
 			}
 			if ( $methods['email'] ) {
-				if ( $methods['totp'] || $has_email_code ) {
+				if ( $has_email_code ) {
 					echo '<p class="or">' . esc_html__( 'or', 'ironveil-security' ) . '</p>';
 				}
+
 				echo '<form method="post" action="' . esc_url( $action ) . '">';
 				wp_nonce_field( self::ACTION );
 				echo '<input type="hidden" name="do" value="send"><button class="secondary" type="submit">' . esc_html( $has_email_code ? __( 'Send a new code', 'ironveil-security' ) : __( 'Email me a code', 'ironveil-security' ) ) . '</button></form>';

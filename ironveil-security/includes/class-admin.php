@@ -477,13 +477,13 @@ final class Admin {
 				'number'   => 100,
 			)
 		);
-		echo '<div class="iv-card"><h2>' . esc_html__( 'Two-factor status of privileged users', 'ironveil-security' ) . '</h2><table class="widefat striped iv-table"><thead><tr><th>' . esc_html__( 'User', 'ironveil-security' ) . '</th><th>' . esc_html__( 'Role', 'ironveil-security' ) . '</th><th>2FA</th><th>' . esc_html__( 'Password', 'ironveil-security' ) . '</th></tr></thead><tbody>';
+		echo '<div class="iv-card"><h2>' . esc_html__( 'Privileged users', 'ironveil-security' ) . '</h2><table class="widefat striped iv-table"><thead><tr><th>' . esc_html__( 'User', 'ironveil-security' ) . '</th><th>' . esc_html__( 'Role', 'ironveil-security' ) . '</th><th>' . esc_html__( 'Password', 'ironveil-security' ) . '</th></tr></thead><tbody>';
 		foreach ( $users as $u ) {
-			$on = Two_Factor::enabled( $u->ID );
-			echo '<tr><td><a href="' . esc_url( get_edit_user_link( $u->ID ) . '#ironveil-2fa' ) . '">' . esc_html( $u->user_login ) . '</a></td><td>' . esc_html( implode( ', ', $u->roles ) ) . '</td><td>' . ( $on ? '<span class="iv-pill iv-good">' . esc_html__( 'Enabled', 'ironveil-security' ) . '</span>' : '<span class="iv-pill iv-bad">' . esc_html__( 'Off', 'ironveil-security' ) . '</span>' ) . '</td><td>' . ( get_user_meta( $u->ID, 'ironveil_pw_breached', true ) ? '<span class="iv-pill iv-bad">' . esc_html__( 'Breached', 'ironveil-security' ) . '</span>' : '—' ) . '</td></tr>';
+			echo '<tr><td><a href="' . esc_url( (string) get_edit_user_link( $u->ID ) ) . '">' . esc_html( $u->user_login ) . '</a></td><td>' . esc_html( implode( ', ', $u->roles ) ) . '</td><td>' . ( get_user_meta( $u->ID, 'ironveil_pw_breached', true ) ? '<span class="iv-pill iv-bad">' . esc_html__( 'Breached', 'ironveil-security' ) . '</span>' : '—' ) . '</td></tr>';
 		}
-		echo '</tbody></table><p class="description">' . esc_html__( 'Each user sets up 2FA from their own profile page. Administrators can reset another user\'s 2FA from that user\'s profile.', 'ironveil-security' ) . '</p></div>';
+		echo '</tbody></table></div>';
 		self::settings_form( 'login', $slug );
+
 		self::footer();
 	}
 
@@ -741,7 +741,7 @@ final class Admin {
 				echo '<p class="iv-banner iv-bad">' . esc_html( License::reason_text( $st['reason'] ) ) . '</p>';
 			}
 			echo '<div class="iv-cols"><div><h3>' . esc_html__( 'Free', 'ironveil-security' ) . '</h3><ul class="iv-list">';
-			foreach ( array( __( 'Web application firewall & IP blocklist', 'ironveil-security' ), __( 'Brute-force protection & login lockouts', 'ironveil-security' ), __( 'Two-factor authentication', 'ironveil-security' ), __( 'Malware & integrity scanner (built-in signatures)', 'ironveil-security' ), __( 'Manual quarantine & core repair', 'ironveil-security' ), __( 'Hardening, security score & activity log', 'ironveil-security' ) ) as $f ) {
+			foreach ( array( __( 'Web application firewall & IP blocklist', 'ironveil-security' ), __( 'Brute-force protection & login lockouts', 'ironveil-security' ), __( 'Administrator identity verification', 'ironveil-security' ), __( 'Malware & integrity scanner (built-in signatures)', 'ironveil-security' ), __( 'Manual quarantine & core repair', 'ironveil-security' ), __( 'Hardening, security score & activity log', 'ironveil-security' ) ) as $f ) {
 				echo '<li>&#10003; ' . esc_html( $f ) . '</li>';
 			}
 			echo '</ul></div><div><h3>Pro</h3><ul class="iv-list">';

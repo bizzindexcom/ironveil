@@ -101,13 +101,6 @@
 .ironveil .iv-list { margin: 0 0 12px; }
 .ironveil .iv-list li { margin: 0 0 6px; }
 
-/* Profile 2FA box */
-.ironveil-2fa-box { max-width: 720px; background: #fff; border: 1px solid #dcdcde; border-radius: 8px; padding: 12px 18px; }
-.ironveil-2fa-box .ironveil-qr svg { width: 200px; height: 200px; display: block; margin: 8px 0; }
-.ironveil-2fa-box .ironveil-ok { color: #15803d; font-weight: 600; }
-.ironveil-2fa-box .ironveil-2fa-msg.is-err { color: #b91c1c; }
-.ironveil-2fa-box .ironveil-2fa-msg.is-ok { color: #15803d; }
-.ironveil-2fa-box .ironveil-codes pre { background: #f6f7f7; padding: 12px; font-size: 15px; line-height: 1.7; }
 
 /* Diff viewer */
 .ironveil .iv-diff { max-height: 70vh; overflow: auto; border: 1px solid var(--iv-line); border-radius: 8px; }

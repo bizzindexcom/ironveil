@@ -72,7 +72,11 @@ final class Installer {
 			self::install_site();
 		}
 		if ( version_compare( (string) get_option( 'ironveil_version', '0' ), IRONVEIL_VERSION, '<' ) ) {
+			if ( version_compare( (string) get_option( 'ironveil_version', '0' ), '1.3.1', '<' ) ) {
+				self::remove_two_factor_data();
+			}
 			self::migrate( (string) get_option( 'ironveil_version', '0' ) );
+
 			update_option( 'ironveil_version', IRONVEIL_VERSION, true );
 		}
 	}
@@ -100,6 +104,21 @@ final class Installer {
 			Settings::flush();
 		}
 		self::schedule();
+	}
+
+	/**
+	 * 1.3.1 removed two-factor authentication: delete the stored secrets,
+	 * recovery codes and pending challenges, and the settings that went with it.
+	 */
+	private static function remove_two_factor_data() {
+		global $wpdb;
+		$wpdb->query( $wpdb->prepare( "DELETE FROM {$wpdb->usermeta} WHERE meta_key LIKE %s", $wpdb->esc_like( 'ironveil_2fa_' ) . '%' ) ); // phpcs:ignore WordPress.DB.DirectDatabaseQuery
+		$stored = get_option( Settings::OPTION );
+		if ( is_array( $stored ) ) {
+			unset( $stored['twofa_roles'], $stored['twofa_remember_days'], $stored['verify_email'] );
+			update_option( Settings::OPTION, $stored, true );
+			Settings::flush();
+		}
 	}
 
 	/**

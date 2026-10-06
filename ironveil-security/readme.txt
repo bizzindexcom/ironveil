@@ -1,20 +1,20 @@
 === IronVeil Security ===
 Contributors: ironveil
-Tags: security, firewall, malware scanner, two-factor authentication, login security
+Tags: security, firewall, malware scanner, login security, server scan
 Requires at least: 6.0
 Tested up to: 6.5
 Requires PHP: 7.4
-Stable tag: 1.3.0
+Stable tag: 1.3.1
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
-A lightweight security suite: a zero-query firewall with threat feeds, brute-force protection, two-factor login, one-step administrator verification, a malware scanner with bulk clean and quarantine, a server scanner, hardening and a signed activity log.
+A lightweight security suite: a zero-query firewall with threat feeds, brute-force protection, one-step administrator verification, a malware scanner with bulk clean and quarantine, a server scanner, hardening and a signed activity log.
 
 == Description ==
 
 Developed by **Jassim T Mohammad**.
 
-IronVeil comes in two editions. **Free** includes the firewall, brute-force protection, two-factor login, the malware and integrity scanner with built-in signatures, manual quarantine and core repair, hardening, the security score and the activity log. **Pro** adds the ClamAV engine, scanning other folders on the server, automatic signature updates and custom rules, automatic quarantine and core repair, scheduled deep scans, CVE matching through WPScan, country blocking, email alerts and extended protection. Pro is unlocked with a license key.
+IronVeil comes in two editions. **Free** includes the firewall, brute-force protection, administrator identity verification, the malware and integrity scanner with built-in signatures, manual quarantine and core repair, hardening, the security score and the activity log. **Pro** adds the ClamAV engine, scanning other folders on the server, automatic signature updates and custom rules, automatic quarantine and core repair, scheduled deep scans, CVE matching through WPScan, country blocking, email alerts and extended protection. Pro is unlocked with a license key.
 
 IronVeil tries to stop attacks before WordPress spends CPU on them. The firewall checks each request with no extra database queries and no file reads. The scanner does its heavy work in short, time-limited background batches.
 
@@ -36,15 +36,14 @@ IronVeil tries to stop attacks before WordPress spends CPU on them. The firewall
 * Logged-in editors and admins are recognised by a validated auth cookie, so their legitimate HTML is never blocked. A forged cookie gets no exemption.
 
 = Administrator identity verification =
-* One verification protects everything sensitive on an administrator account: IronVeil screens and actions, plugin and theme installs, edits, activation and deletion, new users, role changes and deletions, profile changes (email, password), all site settings, content and personal-data export or erasure, application passwords and 2FA changes.
-* Verify once with your authenticator code, a recovery code, or a 6-digit code emailed to your account address. You stay verified for a window you choose (15 minutes by default). Signing in with two-factor counts as verifying.
+* One verification protects everything sensitive on an administrator account: IronVeil screens and actions, plugin and theme installs, edits, activation and deletion, new users, role changes and deletions, profile changes (email, password), all site settings, content and personal-data export or erasure, and application passwords.
+* Verify once with a 6-digit code emailed to your account address. You stay verified for a window you choose (15 minutes by default).
 * The verified window lives inside your WordPress session: it ends on logout and is useless to a stolen cookie from another session. A "Lock now" button ends it early.
 * Five wrong codes pause code checks for 15 minutes, log a critical event and email the site owner. Emailed codes are bound to the browser session that requested them and limited to 6 per hour.
 
 = Login security =
 * Per-IP brute-force lockouts that escalate to a 24-hour site-wide block. Locked-out requests skip password hashing entirely, which saves CPU.
 * Protection against distributed attacks on one account: after many failures on a username, only IPs that previously logged in successfully as that user are accepted.
-* TOTP two-factor authentication (Google Authenticator, Authy, 1Password and others) with a QR setup code, 10 single-use recovery codes, replay protection, a 5-attempt limit, "trust this device" cookies and per-role enforcement. Secrets are encrypted with libsodium using keys from wp-config.php, so a database leak alone does not expose them.
 * Rejects breached passwords using the Have I Been Pwned k-anonymity check.
 * Custom login URL that hides wp-login.php and /wp-admin.
 * Blocks user enumeration (?author=, the REST users endpoint, the users sitemap, oEmbed) and uses generic login error messages.
@@ -79,7 +78,7 @@ IronVeil tries to stop attacks before WordPress spends CPU on them. The firewall
 * Activity log covering logins, users, roles, plugins, themes, critical options, content, application passwords and firewall events. Each entry is HMAC-signed so edits and deletions can be detected.
 * Throttled email alerts. New-administrator and verification-lockout alerts are included in the Free edition.
 * **Report a bug:** IronVeil → Report a Bug emails your description, and optional redacted diagnostics you can read first, to ironveil.wpplug@gmail.com. Nothing is sent without your explicit consent. Internal errors are recorded so they can be included.
-* WP-CLI commands: `wp ironveil status|scan|clean|server-scan|block|unblock|reset-2fa|unlock-verify|firewall|update-feeds|reset-login-url`.
+* WP-CLI commands: `wp ironveil status|scan|clean|server-scan|block|unblock|unlock-verify|firewall|update-feeds|reset-login-url`.
 
 == Performance ==
 
@@ -130,10 +129,9 @@ Add one of these to wp-config.php:
 
 * `define( 'IRONVEIL_DISABLE_FIREWALL', true );` turns off the firewall (useful if you blocked yourself).
 * `define( 'IRONVEIL_DISABLE_LOGIN_SLUG', true );` makes wp-login.php work again.
-* `define( 'IRONVEIL_DISABLE_2FA', true );` turns off 2FA prompts.
-* `define( 'IRONVEIL_DISABLE_VERIFY', true );` turns off administrator identity verification (for example when email delivery is broken and no authenticator is set up).
+* `define( 'IRONVEIL_DISABLE_VERIFY', true );` turns off administrator identity verification (for example when email delivery is broken).
 
-Or use WP-CLI: `wp ironveil scan --deep`, `wp ironveil clamav-test`, `wp ironveil update-signatures`, `wp ironveil unblock <ip>`, `wp ironveil reset-2fa <user>`, `wp ironveil unlock-verify <user>`, `wp ironveil reset-login-url`.
+Or use WP-CLI: `wp ironveil scan --deep`, `wp ironveil clamav-test`, `wp ironveil update-signatures`, `wp ironveil unblock <ip>`, `wp ironveil unlock-verify <user>`, `wp ironveil reset-login-url`.
 
 == nginx ==
 
@@ -160,6 +158,11 @@ IronVeil connects to these services. Each one is used only for the purpose descr
 * **Your own site** (loopback requests), during server scans: checks headers, exposed files and the TLS certificate. Nothing leaves your server.
 
 == Changelog ==
+
+= 1.3.1 =
+* Removed: two-factor authentication (authenticator apps, recovery codes, "trust this device" and per-role enforcement), its WP-CLI command `reset-2fa`, the `IRONVEIL_DISABLE_2FA` constant and the 2FA item of the security score. Updating deletes the stored 2FA secrets and recovery codes.
+* Changed: administrator identity verification now uses emailed codes only, so the "Allow emailed verification codes" setting was removed.
+* Changed: the Login Security page lists privileged users with their breached-password status.
 
 = 1.3.0 =
 * New: administrator identity verification ("sudo mode"). One verification, by authenticator, recovery or emailed code, protects every sensitive action on an administrator account for a configurable window. A two-factor login counts as verified. Failed codes are rate limited, logged and alerted.

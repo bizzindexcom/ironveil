@@ -108,3 +108,10 @@ Tests, run on WP 6.5.5 + SQLite on PHP 8.3 with simulated wordpress.org response
 - 1.2.1 to 1.3.0 settings migration, Pro license path with the owner key, deactivation and uninstall cleanup.
 
 Not tested here: multisite, real ClamAV, nginx, PHP 7.4 runtime (the code avoids PHP 8-only syntax), and live wordpress.org/Spamhaus downloads, which the sandbox blocks.
+
+## v1.3.1: two-factor authentication removed
+- Removed at the owner's request: `class-two-factor.php`, `class-totp.php`, `class-crypto.php` (only 2FA used it), `assets/js/two-factor.js`, `assets/js/qrcode.js`, the profile 2FA section, the `twofa_roles` / `twofa_remember_days` settings, the 2FA security-score item, `wp ironveil reset-2fa` and `IRONVEIL_DISABLE_2FA`.
+- Identity verification is now email-only, so the `verify_email` toggle was removed (turning it off would have left admins unable to verify). `Verify::check()` accepts only session-bound emailed codes; the per-user lockout, 6-per-hour email cap and alerts are unchanged.
+- Upgrade cleanup (`Installer::remove_two_factor_data()`): deletes `ironveil_2fa_*` user meta (encrypted secrets, recovery-code hashes, pending challenges) and the old settings keys.
+- The Login Security page keeps a privileged-users table with breached-password status.
+- Retested on the same sandbox: email-only verification, lockout, Lock now, REST gate, all 10 admin screens, server scan, bulk actions, bug report, upgrade cleanup (4 stored 2FA records deleted), malware self-scan and the firewall suite.

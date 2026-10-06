@@ -39,8 +39,8 @@ final class Plugin {
 
 		Bug_Report::init();
 		Login_Guard::init();
-		Two_Factor::init();
 		Verify::init();
+
 		Hardening::init();
 		Audit::init();
 		Notifier::init();

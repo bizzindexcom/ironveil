@@ -1,6 +1,6 @@
-# IronVeil Security 1.3.0 – Installation and Administrator Guide
+# IronVeil Security 1.3.1 – Installation and Administrator Guide
 
-IronVeil Security by Jassim T Mohammad protects a WordPress site with a firewall, login protection, two-factor authentication, one-step administrator identity verification, a malware scanner with bulk clean and quarantine, a server security scanner, and a signed activity log.
+IronVeil Security by Jassim T Mohammad protects a WordPress site with a firewall, login protection, one-step administrator identity verification, a malware scanner with bulk clean and quarantine, a server security scanner, and a signed activity log.
 
 This guide covers installing the plugin, setting it up, and using every feature. Part B at the end is for the plugin owner and covers distribution and WordPress.org submission.
 
@@ -20,18 +20,18 @@ This guide covers installing the plugin, setting it up, and using every feature.
 ### 2. Install and activate
 
 1. In WordPress go to **Plugins → Add New → Upload Plugin**.
-2. Choose `ironveil-security-1.3.0.zip` and click **Install Now**.
+2. Choose `ironveil-security-1.3.1.zip` and click **Install Now**.
 3. Click **Activate**.
 
 Alternatively, unzip the file and upload the `ironveil-security` folder to `wp-content/plugins/` with FTP or your host's File Manager, then activate it under **Plugins**.
 
-When you update from 1.2.x, your settings are kept. The new firewall rule groups and alert types are switched on automatically.
+When you update from 1.2.x, your settings are kept. The new firewall rule groups and alert types are switched on automatically. Version 1.3.1 no longer includes two-factor authentication; updating deletes any stored 2FA secrets and recovery codes, and administrators verify sensitive actions with emailed codes instead.
 
 ### 3. First-time setup checklist
 
 Work through these steps once, in this order.
 
-1. **Set up two-factor authentication.** Open **Users → Profile**, scroll to *Two-factor authentication (IronVeil)*, click *Set up*, scan the QR code with an authenticator app and enter the code. Save the 10 recovery codes somewhere safe. Administrators are required to do this by default.
+1. **Check your email address.** Identity verification sends codes to each administrator's account email, so make sure it is correct under **Users → Profile** and that your site can send email (an SMTP plugin helps).
 2. **Check your IP detection.** Open **IronVeil → Firewall**. If your site is behind Cloudflare or a load balancer, set *Visitor IP source* and *Trusted proxies*, for example `cloudflare`. Without this, the firewall sees the proxy's address instead of the visitor's.
 3. **Run a malware scan.** Open **IronVeil → Scanner** and click **Scan now**. Review the findings (section 6).
 4. **Run a server scan.** Open **IronVeil → Server Scan** and click **Scan the server now** (section 7).
@@ -53,19 +53,14 @@ One verification protects everything sensitive on an administrator account. You 
 - Saving any site settings (everything that posts to `options.php`).
 - Exporting content, and exporting or erasing personal data.
 - Creating or deleting application passwords, and REST changes to plugins, themes, settings and users.
-- Two-factor changes: disabling, resetting another user, and new recovery codes.
 
 Editors and other non-administrators are not affected.
 
 **How to verify**
 
-When you open a protected screen, IronVeil shows a *Verify it's you* page. You have three ways to verify:
+When you open a protected screen, IronVeil shows a *Verify it's you* page. Click **Email me a code** and enter the 6-digit code sent to your account email. The code expires after 10 minutes and works only in the browser that asked for it.
 
-- Enter the 6-digit code from your authenticator app.
-- Enter one of your recovery codes.
-- Click **Email me a code** and enter the 6-digit code sent to your account email. The code expires after 10 minutes and works only in the browser that asked for it.
-
-Signing in with two-factor authentication already counts as verifying. While you are verified, IronVeil screens show a green *Verified* label and a **Lock now** link that ends the window immediately.
+While you are verified, IronVeil screens show a green *Verified* label and a **Lock now** link that ends the window immediately.
 
 **Protections built in**
 
@@ -80,7 +75,6 @@ Signing in with two-factor authentication already counts as verifying. While you
 | --- | --- | --- |
 | Administrator identity verification | On | Turn off only if you accept the risk. |
 | Stay verified for (minutes) | 15 | Between 5 and 240. |
-| Allow emailed verification codes | On | Turn off to require an authenticator app. |
 
 **Remote management tools** (for example MainWP or ManageWP) that use application passwords keep working. Only a verified administrator can create an application password in the first place.
 
@@ -163,12 +157,11 @@ Everything else, such as PHP settings, database privileges and open ports, shows
 
 **nginx.** nginx ignores `.htaccess`. Add the rules shown on **IronVeil → Hardening** to your server block.
 
-### 8. Login security and two-factor authentication
+### 8. Login security
 
 - **Lockouts.** After 5 failed logins in 15 minutes, an IP is locked out for 30 minutes. After 3 lockouts in 24 hours it is blocked for a day.
-- **Two-factor.** Each user sets it up on their own profile. Administrators can reset another user's 2FA from that user's profile, which requires verification. Code guesses are limited per account, even if the login is restarted.
-- **Recovery codes.** Each code works once. Generate new codes on your profile; this requires a current code.
-- **Trust this device.** Skips the 2FA prompt for the chosen number of days. Changing your password ends all trusted devices.
+- **Targeted accounts.** When one username receives many failed logins in an hour, only IPs that have logged in to it successfully before are accepted.
+- **Breached passwords.** New passwords that appear in known data breaches are rejected, and privileged users with a breached password are flagged on the Login Security page.
 
 ### 9. Alerts
 
@@ -195,8 +188,7 @@ Add one of these lines to `wp-config.php`, above `/* That's all, stop editing! *
 | --- | --- |
 | `define( 'IRONVEIL_DISABLE_FIREWALL', true );` | You blocked yourself. |
 | `define( 'IRONVEIL_DISABLE_LOGIN_SLUG', true );` | You forgot the custom login URL. |
-| `define( 'IRONVEIL_DISABLE_2FA', true );` | You lost your authenticator and your recovery codes. |
-| `define( 'IRONVEIL_DISABLE_VERIFY', true );` | You cannot verify (email is broken and no authenticator is set up). |
+| `define( 'IRONVEIL_DISABLE_VERIFY', true );` | You cannot verify because your site cannot send email. |
 | `define( 'IRONVEIL_KEEP_DATA', true );` | You want to delete the plugin but keep its data. |
 
 ### 12. WP-CLI commands
@@ -211,7 +203,6 @@ wp ironveil server-scan                     # server security scan
 wp ironveil update-feeds                    # refresh threat-intelligence feeds
 wp ironveil block 203.0.113.7 --hours=24
 wp ironveil unblock <ip|all>
-wp ironveil reset-2fa <user>
 wp ironveil unlock-verify <user>            # clear a verification lockout
 wp ironveil firewall <block|monitor|off>
 wp ironveil reset-login-url

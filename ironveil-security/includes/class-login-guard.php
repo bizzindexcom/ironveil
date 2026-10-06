@@ -222,8 +222,8 @@ final class Login_Guard {
 	}
 
 	/**
-	 * Successful interactive login without 2FA interception (priority 20 runs
-	 * after the 2FA hook, which exits when a second factor is required).
+	 * Successful interactive login.
+
 	 *
 	 * @param string   $login Login.
 	 * @param \WP_User $user  User.

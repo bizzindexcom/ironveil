@@ -151,23 +151,6 @@ final class Cli {
 	}
 
 	/**
-	 * Reset two-factor authentication for a user.
-	 *
-	 * ## OPTIONS
-	 * <user>
-	 * : User login, email or ID.
-	 */
-	public function reset_2fa( $args ) {
-		$u = is_numeric( $args[0] ) ? get_user_by( 'id', (int) $args[0] ) : ( get_user_by( 'login', $args[0] ) ? get_user_by( 'login', $args[0] ) : get_user_by( 'email', $args[0] ) );
-		if ( ! $u ) {
-			\WP_CLI::error( 'User not found.' );
-		}
-		Two_Factor::reset( $u->ID );
-		Log::add( '2fa_reset', sprintf( '2FA reset via WP-CLI for %s', $u->user_login ), Log::WARNING );
-		\WP_CLI::success( '2FA reset for ' . $u->user_login );
-	}
-
-	/**
 	 * Set the firewall mode.
 	 *
 	 * ## OPTIONS
