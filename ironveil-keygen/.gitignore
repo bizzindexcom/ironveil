@@ -1,0 +1,8 @@
+# Never commit signing keys, keystores or the owner kit.
+*.ivkey
+ironveil-owner-private.key
+ironveil-owner-kit*/
+# Test binaries and local builds other than the release executables.
+*.test
+*.test.exe
+/ironveil-keygen.exe

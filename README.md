@@ -115,3 +115,27 @@ Not tested here: multisite, real ClamAV, nginx, PHP 7.4 runtime (the code avoids
 - Upgrade cleanup (`Installer::remove_two_factor_data()`): deletes `ironveil_2fa_*` user meta (encrypted secrets, recovery-code hashes, pending challenges) and the old settings keys.
 - The Login Security page keeps a privileged-users table with breached-password status.
 - Retested on the same sandbox: email-only verification, lockout, Lock now, REST gate, all 10 admin screens, server scan, bulk actions, bug report, upgrade cleanup (4 stored 2FA records deleted), malware self-scan and the firewall suite.
+
+## IronVeil Keygen 1.0.0: Windows license and feed app
+`ironveil-keygen/` holds the owner's Windows desktop app. It is native Win32, written in pure Go and fully offline. Ready-to-run executables are in `ironveil-keygen/dist/` (x64 and ARM64, with SHA-256 checksums); see `ironveil-keygen/README.md` for usage, the security design and the build steps.
+- Issues license keys in the same format as `tools/ironveil-license.php` (paid, complimentary or owner; domain lists with `www.`/`*.` rules; expiry or lifetime), plus a ready-to-send customer email.
+- Checks any key: signature, domain coverage, expiry and revocation.
+- Keeps an issued-licenses log with CSV export (formula-injection safe, no keys exported).
+- Revokes licenses and signs `signatures.json`. The full rules file is kept and revoked IDs are merged in, so revocation no longer needs PHP or an unencrypted key file.
+- The owner key lives in an encrypted keystore (Argon2id 256 MiB + XChaCha20-Poly1305, header bound as AAD, bounded KDF parameters). The owner-kit key is imported once.
+- Hardening:
+  - owner-only DACLs;
+  - atomic writes that never overwrite;
+  - memory wiping;
+  - auto-lock after 10 minutes idle or when Windows locks;
+  - clipboard writes kept out of clipboard history and cloud sync;
+  - DLLs loaded from System32 only, plus process mitigation policies;
+  - ASLR (high-entropy) and DEP;
+  - `asInvoker`, with no admin rights needed.
+- Verified:
+  - unit, race and cross-implementation tests against the PHP tools;
+  - fuzzing of every parser;
+  - go vet, staticcheck and gosec;
+  - Windows test binaries run under Wine;
+  - end-to-end GUI runs under Wine, where an app-issued key activated Pro in a test WordPress, and an app-signed feed revoked an app-issued key in the plugin.
+- Reproducible builds via `build.sh` / `build.ps1`.
