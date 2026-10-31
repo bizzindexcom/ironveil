@@ -20,7 +20,7 @@ One job: describe a version in the user's two existing voices. Read the last two
 - For a Fix, name the symptom the user saw ("no longer fails with \"File is not writable\"").
 - Newest version first, directly under `== Changelog ==`.
 
-## README.md rules
+## README.md rules (the user confirmed: write this section for every version)
 - Heading `## vX.Y.Z: <short theme>`.
 - If a live site triggered it, start with "The user's live site reported:" and the findings.
 - Name classes/methods in backticks (`Scanner::write_file()`), numbered lists for ordered fallbacks.

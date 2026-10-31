@@ -9,7 +9,7 @@ One job: give the user the exact command for a key, and read keys. The user runs
 
 ## Steps
 1. Collect: customer name, domain(s), type (`paid`, `complimentary`, `owner`), days (paid only). Ask for anything missing; never default a domain.
-2. Check intent on domains (the tool already rejects `https://` and paths): `*.shop.com` covers subdomains only, so ask whether `shop.com` should be added too.
+2. Check intent on domains (the tool already rejects `https://` and paths): `*.shop.com` covers `shop.com` AND every subdomain (`License::domain_allowed()`); `www.` is ignored. Use a wildcard only if the customer paid for all subdomains.
 3. Print the command for the user to run on their own computer:
    `php tools/ironveil-license.php issue --key=<private key file> --name="…" --domain=… [--domain=…] [--type=…] [--days=…]`
 4. When the user pastes the resulting key, check it: `php tools/ironveil-license.php inspect <key>` and confirm name, domains, type and expiry match the request.

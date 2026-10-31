@@ -1,7 +1,9 @@
 #!/usr/bin/env bash
 # Release checks for an unpacked IronVeil plugin folder.
-# Usage: release_check.sh <plugin-dir> [expected-version]
+# Usage: release_check.sh [--dev] <plugin-dir> [expected-version]
+# Builds are for distribution (wordpress.org) by default: placeholders fail. --dev turns them into warnings.
 set -u
+dev=0; [ "${1:-}" = "--dev" ] && { dev=1; shift; }
 dir="${1:?plugin dir}"; want="${2:-}"
 fail=0; warn=0
 ok()   { echo "  ok    $1"; }
@@ -38,8 +40,10 @@ secrets=$(find "$dir" \( -iname '*.key' -o -iname '*private*' -o -iname '*owner-
 grep -rlE 'BEGIN (RSA |EC |OPENSSH )?PRIVATE KEY' "$dir" >/dev/null && bad "PEM private key content found"
 [ -f "$dir/tools/.htaccess" ] && ok "tools/.htaccess present" || bad "tools/.htaccess missing (CLI tools would be web-reachable)"
 
-grep -q "PURCHASE_URL = 'https://example.com" "$dir/includes/class-license.php" && note "License::PURCHASE_URL is still the example.com placeholder"
-grep -q "DEFAULT_FEED_URL = ''" "$dir/includes/class-license.php" && note "License::DEFAULT_FEED_URL is empty"
+ph() { if [ $dev -eq 1 ]; then note "$1"; else bad "$1 (distribution build; use --dev for a test build)"; fi; }
+grep -q "PURCHASE_URL = 'https://example.com" "$dir/includes/class-license.php" && ph "License::PURCHASE_URL is still the example.com placeholder"
+grep -q "DEFAULT_FEED_URL = ''" "$dir/includes/class-license.php" && ph "License::DEFAULT_FEED_URL is empty"
+grep -q "^ \* Plugin URI: *https://example.com" "$dir/ironveil-security.php" && ph "Plugin URI is still the example.com placeholder"
 
 echo; if [ $fail -eq 0 ]; then echo "ALL CHECKS PASSED ($warn warning(s))"; else echo "$fail CHECK(S) FAILED"; fi
 exit $([ $fail -eq 0 ] && echo 0 || echo 1)

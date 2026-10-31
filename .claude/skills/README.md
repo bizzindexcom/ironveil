@@ -3,7 +3,7 @@
 Skills Claude loads on its own when a request matches. One skill, one job.
 Test evidence: `TEST-RESULTS.md`. Every skill has a `CHANGELOG.md`.
 
-> **Frequencies and hours below are estimates from the repo history** (v1.0.0 → v1.2.1 between 30 Sep and 27 Oct 2026, about one release a week). Correct them. They decide the build order.
+> **Frequencies:** you said volume will depend on download requests once IronVeil is on wordpress.org, so the hours below are rough guesses until launch. Until then, the skills are ranked by risk, not hours.
 
 ## 1. Work audit (from the repo, not from interviews)
 
@@ -43,16 +43,22 @@ Test evidence: `TEST-RESULTS.md`. Every skill has a `CHANGELOG.md`.
 
 Four fixes have already gone through this loop during testing (see each CHANGELOG.md).
 
-## 5. Next 3 skills to build (ranked by estimated hours saved)
+## 5. Next 3 skills to build (re-ranked after your answers)
 
-1. **`ironveil-waf-regression`** — README says "WAF suite still 60/60", but the suite is not in this repo. Add it here first; then a skill can run it before every release. Biggest risk reducer.
-2. **`ironveil-sandbox-test`** — rebuild the WP 6.5.5 + SQLite + PHP 8.4 + ClamAV sandbox and the mock core-checksum mu-plugins described in README.
-3. **`ironveil-wporg-readme-check`** — validate readme.txt headers, "Tested up to", and the Free/Pro wording against wordpress.org trialware rules (README flags this as an open risk).
+1. **`ironveil-wporg-check`**: the plugin is going to wordpress.org, so the plugin review there becomes the first gate. Check the readme.txt headers, `Tested up to`, `Contributors` (must be your wordpress.org username) and the guideline on locked features (see the risk below).
+2. **`ironveil-waf-regression`**: README says "WAF suite still 60/60", but the suite isn't in this repo. Add it so the release check can run it.
+3. **`ironveil-support-triage`**: once downloads start, sort support-forum posts into bug, false positive, how-to or licence question. Build it when real posts arrive, not before.
 
-## 6. Open questions for you
+## 6. Your answers (2026-10-31)
 
-1. Where does the plugin source live? This repo only holds the zip, so skills unpack it to a scratch folder.
-2. Should the README.md design notes keep being written per version, or only readme.txt?
-3. Is the 1.2.1 zip in this repo meant for distribution? It still has the `example.com` purchase URL and no feed URL.
-4. `SECURITY.md` lists versions 5.1.x / 4.0.x as supported; the plugin is at 1.2.1. Intentional?
-5. Real frequencies: how many releases, incidents and licence sales per week?
+| Question | Answer | What changed |
+|---|---|---|
+| Where is the source? | In Claude conversations | `ironveil-release` step 1 unpacks the zip. Recommended: commit the unpacked source here, so every change has a diff. |
+| Keep README.md notes per version? | Yes | `ironveil-changelog` rule marked as confirmed |
+| Is the zip for distribution? | Yes | Placeholder URLs and `Plugin URI` now **fail** the release check (`--dev` for test builds). The shipped 1.2.1 zip fails 3 checks. |
+| SECURITY.md version table | Written by Claude | The table (5.1.x / 4.0.x) matches GitHub's sample SECURITY.md and doesn't describe IronVeil. Proposed fix: 1.2.x supported, older versions not. Waiting for your OK. |
+| Weekly volume | Depends on downloads | Ranking switched to risk until launch |
+
+## 7. Biggest risk before wordpress.org
+
+Guideline 5 of the wordpress.org plugin guidelines says trialware isn't allowed: a plugin there may not ship features that are locked until someone pays. IronVeil 1.2.x ships its Pro features inside the plugin and unlocks them with a key (`Settings::get()` + `License::PRO_SETTINGS`); your own README flags this too. Expect the review to reject it in this form. The usual fix is two plugins: a free one on wordpress.org, and a separate Pro add-on sold from your site that contains the Pro code. That is a design decision for you; no skill changes it.
