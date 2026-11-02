@@ -1,6 +1,6 @@
 # ironveil
 security plugin for WordPress
-# IronVeil Security: design and test notes (current: v1.2.1)
+# IronVeil Security: design and test notes (current: v1.3.3)
 Author: Jassim T Mohammad.
 Plugin designed Sep,30,2026
 All Rights Reserved. 
@@ -63,6 +63,34 @@ Tests (run as a non-root PHP user):
 - File owned by root: a clear error, and no stray backup left.
 - Diff viewer showed the injected code, escaped. Download returned the verified original. A request without a nonce was refused.
 - WAF suite still 60/60.
+
+## v1.3.0–v1.3.2
+Not written up here. The readme.txt changelog and `docs/IronVeil-Security-Guide.md` cover these versions. Since v1.3.2 the plugin source is in `ironveil-security/` and the owner tools are in `ironveil-owner-tools/`.
+
+## v1.3.3: security review fixes
+Found in a review of the uploaded 1.3.2 sources:
+- `Verify::AJAX_ACTIONS` did not include `edit-theme-plugin-file`. The file editors save through that AJAX action, so an editor tab opened while verified could keep saving code after the verified window ended. Added.
+- `Server_Scan::write_root_rules()` and `Hardening::write_uploads_rules()` wrote `Options` and `php_flag` into .htaccess with no check. On hosts whose AllowOverride does not include Options, Apache answers HTTP 500 for every request below that file: the whole site for the root file, every image for uploads. Both now use `Hardening::insert_rules_checked()`:
+  1. Remove our block and request a probe URL (baseline).
+  2. Write the full block and probe again.
+  3. On a new 500, write the block without `Options`/`php_flag`/`php_value` lines.
+  4. If it still fails, remove the block and return an error.
+  - The probe is `home_url('/')` for the root and a temporary text file for uploads. If the loopback request fails, the rules are kept, because nothing can be verified.
+- `Threat_Feeds::replace()` accepted ranges of any size. A hijacked or corrupted feed could add `64.0.0.0/3`. `Threat_Feeds::too_wide()` now drops ranges wider than IPv4 /8 or IPv6 /16.
+- `Signature_Feed::install()` took `revoked_licenses` from any feed that verified against the configured key. That key and the feed URL are site settings, so a site could install its own feed with an empty list and un-revoke its key. Now:
+  - Only feeds signed with `License::PUBLIC_KEY` change the revocation list. Other feeds keep the stored list.
+  - Sites on a custom feed also fetch the author's feed for revocations only (`Signature_Feed::update_revocations()`), with their own rollback counter `revoked_version`.
+  - `License::revocation_fingerprint()` now includes that counter, so the cached licence status is refreshed.
+- Owner tools: `ironveil-license.php` wrote customer names to `licenses-issued.csv` without formula escaping. Cells starting with `= + - @` are now prefixed with `'`, as the Windows keygen already does.
+
+Reviewed with no change needed: admin handlers (nonce, capability and verification on each), Verify code handling, IP detection, Cleaner, Quarantine, Bug_Report, License verification, the autoloader and uninstall.
+
+Tests (PHP 8.3 harness with WordPress functions stubbed; the classes are the real files):
+- Range cap: 9 IPv4/IPv6 cases, including real DROP-sized ranges kept and /3 and /15 dropped.
+- Revocations: 9 cases (author feed, admin feed cannot clear or add, revocations-only path, rollback, wrong key, tampered payload). The admin-feed case and the editor-gate case fail on 1.3.2 and pass on 1.3.3.
+- .htaccess: 6 cases (accepted, Options rejected and retried, still failing and removed, site already failing, loopback blocked, baseline clears old block).
+- Ledger: an `=HYPERLINK(...)` name is stored as text.
+- Not tested: a real Apache host that rejects `Options`, and a full WordPress run. Neither is available in the sandbox.
 
 ## Test environment notes
 Sandbox: WP 6.5.5 + SQLite, PHP 8.4, real ClamAV 1.5.4 with a local test DB. wordpress.org is not reachable from the sandbox, so we simulated core checksums and core.svn with test mu-plugins.

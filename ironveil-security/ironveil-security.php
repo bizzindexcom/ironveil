@@ -3,7 +3,7 @@
  * Plugin Name:       IronVeil Security
  * Plugin URI:        https://jeemplugins.com/ironveilsecurity
  * Description:       Lightweight, high-grade WordPress security: zero-query web application firewall with threat-intelligence feeds, brute-force and bot protection, one-step administrator identity verification, incremental malware and file-integrity scanner with bulk clean / quarantine, server security scanner, hardening, bug reporting and a tamper-evident activity log.
- * Version:           1.3.2
+ * Version:           1.3.3
  * Requires at least: 6.2
  * Requires PHP:      7.4
  * Author:            Jassim T Mohammad
@@ -21,7 +21,7 @@ if ( defined( 'IRONVEIL_VERSION' ) ) {
 	return; // Guard against a duplicate copy of the plugin.
 }
 
-define( 'IRONVEIL_VERSION', '1.3.2' );
+define( 'IRONVEIL_VERSION', '1.3.3' );
 
 
 define( 'IRONVEIL_DB_VERSION', 1 );

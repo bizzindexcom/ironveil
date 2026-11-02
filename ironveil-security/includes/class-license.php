@@ -252,7 +252,7 @@ final class License {
 	 */
 	private static function revocation_fingerprint() {
 		$feed = get_option( Signature_Feed::OPTION );
-		return is_array( $feed ) ? (string) ( $feed['version'] ?? 0 ) : '0';
+		return is_array( $feed ) ? ( $feed['version'] ?? 0 ) . '|' . ( $feed['revoked_version'] ?? 0 ) . '|' . count( (array) ( $feed['revoked'] ?? array() ) ) : '0';
 	}
 
 	/**

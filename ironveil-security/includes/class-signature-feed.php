@@ -128,7 +128,44 @@ final class Signature_Feed {
 		if ( is_wp_error( $result ) ) {
 			return self::fail( $result->get_error_message() );
 		}
+		if ( $url !== License::DEFAULT_FEED_URL ) {
+			self::update_revocations();
+		}
 		return true;
+	}
+
+	/**
+	 * Fetch only the author's license revocations. Sites that use their own
+	 * signature feed still receive them, so switching feeds cannot keep a
+	 * revoked key working.
+	 *
+	 * @return true|\WP_Error
+	 */
+	public static function update_revocations() {
+		if ( '' === License::DEFAULT_FEED_URL ) {
+			return true;
+		}
+		$res = wp_safe_remote_get(
+			License::DEFAULT_FEED_URL,
+			array(
+				'timeout'             => 10,
+				'limit_response_size' => self::MAX_BYTES,
+				'user-agent'          => 'IronVeil-Security/' . IRONVEIL_VERSION,
+			)
+		);
+		if ( is_wp_error( $res ) || 200 !== (int) wp_remote_retrieve_response_code( $res ) ) {
+			return new \WP_Error( 'ironveil_feed', __( 'Could not download the license revocation list.', 'ironveil-security' ) );
+		}
+		return self::install( (string) wp_remote_retrieve_body( $res ), self::owner_key(), '', true );
+	}
+
+	/**
+	 * The plugin author's raw public key.
+	 *
+	 * @return string
+	 */
+	private static function owner_key() {
+		return (string) base64_decode( License::PUBLIC_KEY, true ); // phpcs:ignore WordPress.PHP.DiscouragedPHPFunctions.obfuscation_base64_decode
 	}
 
 	/**
@@ -137,9 +174,10 @@ final class Signature_Feed {
 	 * @param string $body JSON document.
 	 * @param string $key  Raw public key.
 	 * @param string $etag ETag.
+	 * @param bool   $revocations_only Store only the revocation list (author's feed).
 	 * @return true|\WP_Error
 	 */
-	public static function install( $body, $key, $etag = '' ) {
+	public static function install( $body, $key, $etag = '', $revocations_only = false ) {
 		$doc = json_decode( $body, true );
 		if ( ! is_array( $doc ) || empty( $doc['payload'] ) || empty( $doc['signature'] ) || ! is_string( $doc['payload'] ) || ! is_string( $doc['signature'] ) ) {
 			return new \WP_Error( 'ironveil_feed', __( 'Feed is not in the expected format.', 'ironveil-security' ) );
@@ -164,6 +202,31 @@ final class Signature_Feed {
 		}
 		$state = self::state();
 		$ver   = (int) $p['version'];
+		// Only feeds signed by the plugin author may revoke licenses; a feed the
+		// site admin configured must not be able to clear the author's list.
+		$owner   = hash_equals( self::owner_key(), (string) $key );
+		$revoked = array();
+		foreach ( isset( $p['revoked_licenses'] ) && is_array( $p['revoked_licenses'] ) ? array_slice( $p['revoked_licenses'], 0, 10000 ) : array() as $rid ) {
+			if ( is_string( $rid ) && preg_match( '/^[A-Za-z0-9_-]{4,64}$/', $rid ) ) {
+				$revoked[] = $rid;
+			}
+		}
+		if ( $revocations_only ) {
+			if ( ! $owner ) {
+				return new \WP_Error( 'ironveil_feed', __( 'Revocations are only accepted from the plugin author.', 'ironveil-security' ) );
+			}
+			if ( $ver < (int) ( $state['revoked_version'] ?? 0 ) || ( ! empty( $p['expires'] ) && (int) $p['expires'] < time() ) ) {
+				return new \WP_Error( 'ironveil_feed', __( 'The revocation list is older than the installed one or has expired.', 'ironveil-security' ) );
+			}
+			$state['revoked']         = $revoked;
+			$state['revoked_version'] = $ver;
+			update_option( self::OPTION, $state, false );
+			License::flush();
+			return true;
+		}
+		if ( ! $owner ) {
+			$revoked = isset( $state['revoked'] ) ? (array) $state['revoked'] : array();
+		}
 		if ( $ver < (int) $state['version'] ) {
 			Log::add( 'sig_feed_rejected', sprintf( 'Signature feed rollback refused (offered %1$d, installed %2$d)', $ver, $state['version'] ), Log::WARNING );
 			/* translators: 1: offered 2: installed */
@@ -189,12 +252,6 @@ final class Signature_Feed {
 				}
 			}
 		}
-		$revoked = array();
-		foreach ( isset( $p['revoked_licenses'] ) && is_array( $p['revoked_licenses'] ) ? array_slice( $p['revoked_licenses'], 0, 10000 ) : array() as $rid ) {
-			if ( is_string( $rid ) && preg_match( '/^[A-Za-z0-9_-]{4,64}$/', $rid ) ) {
-				$revoked[] = $rid;
-			}
-		}
 		$names = array();
 		foreach ( isset( $p['filenames'] ) && is_array( $p['filenames'] ) ? array_slice( $p['filenames'], 0, 1000 ) : array() as $n ) {
 			$n = strtolower( sanitize_file_name( (string) $n ) );
@@ -212,6 +269,7 @@ final class Signature_Feed {
 				'names'    => array_values( array_unique( $names ) ),
 				'rejected' => $rejected,
 				'revoked'  => $revoked,
+				'revoked_version' => $owner ? $ver : (int) ( $state['revoked_version'] ?? 0 ),
 				'etag'     => substr( $etag, 0, 200 ),
 				'updated'  => time(),
 				'checked'  => time(),

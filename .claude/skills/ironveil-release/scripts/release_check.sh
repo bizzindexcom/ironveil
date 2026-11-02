@@ -38,7 +38,9 @@ exit(min($bad,200));' "$dir" "$def"; fail=$((fail+$?))
 secrets=$(find "$dir" \( -iname '*.key' -o -iname '*private*' -o -iname '*owner-kit*' -o -iname '*.pem' -o -name '.env' \) -print)
 [ -z "$secrets" ] && ok "no key/secret files" || bad "secret-looking files: $secrets"
 grep -rlE 'BEGIN (RSA |EC |OPENSSH )?PRIVATE KEY' "$dir" >/dev/null && bad "PEM private key content found"
-[ -f "$dir/tools/.htaccess" ] && ok "tools/.htaccess present" || bad "tools/.htaccess missing (CLI tools would be web-reachable)"
+# Since 1.3.x the owner tools ship separately; any copy inside the plugin reaches every customer.
+owner=$(find "$dir" \( -name 'ironveil-license.php' -o -name 'ironveil-sign.php' -o -name 'build-checksums.php' -o -name 'ironveil-common.php' \) -print)
+[ -z "$owner" ] && ok "no owner tools inside the plugin" || bad "owner tools inside the plugin: $owner"
 
 ph() { if [ $dev -eq 1 ]; then note "$1"; else bad "$1 (distribution build; use --dev for a test build)"; fi; }
 grep -q "PURCHASE_URL = 'https://example.com" "$dir/includes/class-license.php" && ph "License::PURCHASE_URL is still the example.com placeholder"

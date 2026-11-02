@@ -131,7 +131,14 @@ if ( 'issue' === $ironveil_cmd ) {
 		if ( $ironveil_new ) {
 			fputcsv( $ironveil_fh, array( 'id', 'name', 'type', 'domains', 'issued_utc', 'expires_utc' ), ',', '"', '\\' );
 		}
-		fputcsv( $ironveil_fh, array( $ironveil_p['id'], $ironveil_name, $ironveil_type, implode( ' ', $ironveil_domains ), gmdate( 'Y-m-d H:i', $ironveil_issued ), $ironveil_expires ? gmdate( 'Y-m-d H:i', $ironveil_expires ) : 'never' ), ',', '"', '\\' );
+		// Cells starting with = + - @ (or tab/CR) run as formulas in Excel; prefix them with '.
+		$ironveil_row = array_map(
+			static function ( $c ) {
+				return preg_match( '/^[=+\-@\t\r]/', (string) $c ) ? "'" . $c : (string) $c;
+			},
+			array( $ironveil_p['id'], $ironveil_name, $ironveil_type, implode( ' ', $ironveil_domains ), gmdate( 'Y-m-d H:i', $ironveil_issued ), $ironveil_expires ? gmdate( 'Y-m-d H:i', $ironveil_expires ) : 'never' )
+		);
+		fputcsv( $ironveil_fh, $ironveil_row, ',', '"', '\\' );
 		fclose( $ironveil_fh );
 	} else {
 		ironveil_warn( 'Could not record this license in ' . $ironveil_ledger . '. Note its id yourself: ' . $ironveil_p['id'] );

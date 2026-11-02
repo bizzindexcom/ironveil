@@ -8,7 +8,7 @@ description: Package a new IronVeil Security plugin version into ironveil-securi
 One job: turn an edited plugin folder into a verified release zip. It does not write release notes.
 
 ## Steps
-1. Get the plugin folder. The source lives in the user's Claude conversations, so usually only the zip is here: unpack it to the scratchpad (`unzip <zip> -d <dir>`). Never edit inside the repo's zip.
+1. Use the plugin source in the repo: `ironveil-security/` (since 1.3.2 the source is committed; owner tools are in `ironveil-owner-tools/`). Package into the scratchpad, never into the repo.
 2. Ask for the new version if the user did not give one. Do not guess patch vs minor.
 3. Bump the version in exactly these three places:
    - `ironveil-security.php` header line `Version:`
@@ -22,7 +22,7 @@ One job: turn an edited plugin folder into a verified release zip. It does not w
 ## Rules (from the repo's own notes)
 - Rebuild `checksums.json` after ANY edit, last, or the plugin reports itself as tampered.
 - The zip's top folder is `ironveil-security/`, named `ironveil-security-X.Y.Z.zip`.
-- Never package a private key, `*.key`, or anything named `*owner-kit*` / `*PRIVATE*`. The check fails hard on these.
+- Never package a private key, `*.key`, or anything named `*owner-kit*` / `*PRIVATE*`, and never the owner tools (licence generator, feed signer, checksum builder). The check fails hard on these.
 - Every zip is for distribution on wordpress.org (confirmed by the user). Placeholder `PURCHASE_URL`, empty `DEFAULT_FEED_URL` and an example.com `Plugin URI` fail the check. Use `--dev` only when the user says it is a test build.
 
 ## Examples

@@ -229,8 +229,12 @@ final class Hardening {
 		if ( ! self::htaccess_server() && ! is_file( $up['basedir'] . '/.htaccess' ) ) {
 			return; // nginx/IIS: see README for the equivalent snippet.
 		}
-		require_once ABSPATH . 'wp-admin/includes/misc.php';
-		insert_with_markers(
+		// Probe with a static file: a 500 there means the host rejected one of our directives.
+		$probe = 'ironveil-probe-' . bin2hex( random_bytes( 6 ) ) . '.txt';
+		if ( false === file_put_contents( $up['basedir'] . '/' . $probe, 'ok' ) ) { // phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_file_put_contents
+			$probe = '';
+		}
+		self::insert_rules_checked(
 			$up['basedir'] . '/.htaccess',
 			Installer::HT_MARKER,
 			array(
@@ -247,8 +251,77 @@ final class Hardening {
 				'  php_flag engine off',
 				'</IfModule>',
 				'Options -Indexes -ExecCGI',
+			),
+			'' !== $probe ? trailingslashit( $up['baseurl'] ) . $probe : ''
+		);
+		if ( '' !== $probe ) {
+			wp_delete_file( $up['basedir'] . '/' . $probe );
+		}
+	}
+
+	/**
+	 * Write a marker block to an .htaccess file without taking the site down.
+	 *
+	 * Hosts whose AllowOverride does not include Options answer every request
+	 * below that .htaccess with HTTP 500 when it contains "Options" or
+	 * "php_flag". After writing, the probe URL is requested; on a new 500 the
+	 * block is retried without those directives, and removed if that fails too.
+	 * When the probe cannot run (no URL, loopback blocked) the block is kept.
+	 *
+	 * @param string   $file      .htaccess path.
+	 * @param string   $marker    Marker name.
+	 * @param string[] $lines     Rules.
+	 * @param string   $probe_url URL served from below that .htaccess.
+	 * @return true|\WP_Error
+	 */
+	public static function insert_rules_checked( $file, $marker, array $lines, $probe_url ) {
+		require_once ABSPATH . 'wp-admin/includes/misc.php';
+		$before = 0;
+		if ( '' !== $probe_url ) {
+			// Baseline without our block, so rules left by an older version cannot mask a 500.
+			insert_with_markers( $file, $marker, array() );
+			$before = self::probe( $probe_url );
+		}
+		$reduced = array_values(
+			array_filter(
+				$lines,
+				static function ( $l ) {
+					return ! preg_match( '/^\s*(?:Options|php_flag|php_value)\b/i', $l );
+				}
 			)
 		);
+		foreach ( array( $lines, $reduced ) as $set ) {
+			if ( ! insert_with_markers( $file, $marker, $set ) ) {
+				return new \WP_Error( 'ironveil_htaccess', __( 'Could not update .htaccess.', 'ironveil-security' ) );
+			}
+			if ( 500 === $before || '' === $probe_url || 500 !== self::probe( $probe_url ) ) {
+				if ( $set !== $lines ) {
+					Log::add( 'htaccess_reduced', sprintf( 'The host does not allow Options/php_flag in %s; rules were written without them', basename( dirname( $file ) ) . '/.htaccess' ), Log::NOTICE );
+				}
+				return true;
+			}
+		}
+		insert_with_markers( $file, $marker, array() );
+		Log::add( 'htaccess_rolled_back', sprintf( 'Rules removed from %s because the site answered HTTP 500 with them', basename( dirname( $file ) ) . '/.htaccess' ), Log::WARNING );
+		return new \WP_Error( 'ironveil_htaccess', __( 'Your web server rejected the protective .htaccess rules (HTTP 500), so they were removed again and the site is unchanged. Ask your host to add the rules shown on the Hardening page to the server configuration.', 'ironveil-security' ) );
+	}
+
+	/**
+	 * HTTP status of a loopback request (0 when it could not be made).
+	 *
+	 * @param string $url URL.
+	 * @return int
+	 */
+	private static function probe( $url ) {
+		$res = wp_remote_get(
+			$url,
+			array(
+				'timeout'     => 10,
+				'redirection' => 0,
+				'sslverify'   => apply_filters( 'https_local_ssl_verify', false ),
+			)
+		);
+		return is_wp_error( $res ) ? 0 : (int) wp_remote_retrieve_response_code( $res );
 	}
 
 	/**

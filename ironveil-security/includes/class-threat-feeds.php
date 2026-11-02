@@ -28,6 +28,14 @@ final class Threat_Feeds {
 	const MAX     = 15000;
 
 	/**
+	 * Widest range a feed may add: IPv4 /8, IPv6 /16. Real DROP entries are far
+	 * narrower; a wider one means a hijacked or corrupted list that would block
+	 * a large share of the internet.
+	 */
+	const MIN_PREFIX_V4 = 8;
+	const MIN_PREFIX_V6 = 16;
+
+	/**
 	 * Feed definitions: urls, minimum plausible entry count, label.
 	 *
 	 * @return array
@@ -280,7 +288,7 @@ final class Threat_Feeds {
 					break;
 				}
 			}
-			if ( $overlap || ( $self && IP::in_ranges( $self, array( $r ) ) ) ) {
+			if ( $overlap || ( $self && IP::in_ranges( $self, array( $r ) ) ) || self::too_wide( $r ) ) {
 				continue;
 			}
 			$rows[]   = '(%s, %s, %s, %s, %s, %d, %d)';
@@ -309,6 +317,27 @@ final class Threat_Feeds {
 	 * @param array  $rows   Placeholders.
 	 * @param array  $params Values.
 	 */
+	/**
+	 * Is a range wider than a feed may add?
+	 *
+	 * @param string[] $r [ from_hex, to_hex ] from IP::range() (CIDR-aligned).
+	 * @return bool
+	 */
+	public static function too_wide( array $r ) {
+		$bits = 0;
+		for ( $i = 0; $i < 32 && $r[0][ $i ] === $r[1][ $i ]; $i++ ) {
+			$bits += 4;
+		}
+		if ( $i < 32 ) {
+			$x     = hexdec( $r[0][ $i ] ) ^ hexdec( $r[1][ $i ] );
+			$bits += 4 - strlen( decbin( $x ) );
+		}
+		if ( 0 === strpos( $r[0], '00000000000000000000ffff' ) ) {
+			return $bits - 96 < self::MIN_PREFIX_V4;
+		}
+		return $bits < self::MIN_PREFIX_V6;
+	}
+
 	private static function insert( $table, array $rows, array $params ) {
 		global $wpdb;
 		$wpdb->query( $wpdb->prepare( 'INSERT INTO %i (ip_from, ip_to, label, reason, source, created, expires) VALUES ' . implode( ',', $rows ), array_merge( array( $table ), $params ) ) ); // phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared,WordPress.DB.DirectDatabaseQuery -- $rows holds only literal placeholder groups.

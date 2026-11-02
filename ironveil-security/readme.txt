@@ -4,7 +4,7 @@ Tags: security, firewall, malware scanner, login security, server scan
 Requires at least: 6.2
 Tested up to: 7.1
 Requires PHP: 7.4
-Stable tag: 1.3.2
+Stable tag: 1.3.3
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -158,6 +158,12 @@ IronVeil connects to these services. Each one is used only for the purpose descr
 * **Your own site** (loopback requests), during server scans: checks headers, exposed files and the TLS certificate. Nothing leaves your server.
 
 == Changelog ==
+
+= 1.3.3 =
+* Fix: saving a file in the plugin or theme file editor now also needs identity verification. Before, an editor tab opened while you were verified could keep saving code after the verified window ended.
+* Fix: "Clean" for exposed server files and the uploads protection no longer take a site down on hosts that do not allow "Options" in .htaccess. IronVeil now checks that the site still loads after writing the rules, retries without the unsupported lines, and removes the rules again if the site still fails.
+* Fix: a threat-intelligence list can no longer block huge parts of the internet. Ranges wider than /8 (IPv4) or /16 (IPv6) are ignored.
+* Fix: license revocations are only accepted from the plugin author's signed feed. Sites that use their own signature feed still receive the author's revocations.
 
 = 1.3.2 =
 * Plugin URI is now https://jeemplugins.com/ironveilsecurity; the "Buy Pro" link points there too.

@@ -804,8 +804,7 @@ final class Server_Scan {
 		if ( file_exists( $file ) ? ! wp_is_writable( $file ) : ! wp_is_writable( ABSPATH ) ) {
 			return new \WP_Error( 'ironveil_server', __( 'The root .htaccess file is not writable.', 'ironveil-security' ) );
 		}
-		require_once ABSPATH . 'wp-admin/includes/misc.php';
-		$ok = insert_with_markers(
+		$ok = Hardening::insert_rules_checked(
 			$file,
 			self::HT_MARKER,
 			array(
@@ -823,10 +822,11 @@ final class Server_Scan {
 				'  RewriteEngine On',
 				'  RewriteRule (^|/)\.(git|svn|hg)(/|$) - [F,L]',
 				'</IfModule>',
-			)
+			),
+			home_url( '/' )
 		);
-		if ( ! $ok ) {
-			return new \WP_Error( 'ironveil_server', __( 'Could not update .htaccess.', 'ironveil-security' ) );
+		if ( is_wp_error( $ok ) ) {
+			return $ok;
 		}
 		Log::add( 'server_fixed', 'Protective rules written to the root .htaccess', Log::NOTICE );
 		return true;

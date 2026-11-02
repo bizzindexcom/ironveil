@@ -41,7 +41,7 @@ final class Verify {
 	const SCREENS = array( 'plugin-install.php', 'theme-install.php', 'plugin-editor.php', 'theme-editor.php', 'user-new.php', 'update.php', 'options.php', 'export.php', 'import.php', 'export-personal-data.php', 'erase-personal-data.php', 'site-new.php', 'site-settings.php', 'site-users.php', 'network/settings.php' );
 
 	/** Core AJAX actions that change code or users. */
-	const AJAX_ACTIONS = array( 'install-plugin', 'delete-plugin', 'install-theme', 'delete-theme', 'activate-plugin', 'deactivate-plugin', 'add-user', 'delete-user' );
+	const AJAX_ACTIONS = array( 'install-plugin', 'delete-plugin', 'install-theme', 'delete-theme', 'activate-plugin', 'deactivate-plugin', 'add-user', 'delete-user', 'edit-theme-plugin-file' );
 
 	/** Emailed codes allowed per user per hour. */
 	const EMAIL_PER_HOUR = 6;
