@@ -1,6 +1,6 @@
 ---
 name: ironveil-license
-description: Prepare, inspect or revoke IronVeil Pro license keys (IVL1.… keys signed with the author's offline Ed25519 key) using the IronVeil Keygen Windows app or ironveil-owner-tools/ironveil-license.php. LEGACY: since 2026-11-02 new licences come from Freemius. Use only to inspect or replace IVL1 keys already issued (migration to Freemius, docs/license-automation.md Phase 2 step 6). Do NOT use to issue new customer licences (send the user to the Freemius dashboard), for signature rules (ironveil-signature-update), or for changing licensing code.
+description: LEGACY IronVeil IVL1 license keys (signed with the author's offline Ed25519 key; IronVeil Keygen or ironveil-owner-tools/ironveil-license.php). Since 2026-11-02 new licences come from Freemius. Use only to inspect or replace IVL1 keys already issued (migration to Freemius, docs/license-automation.md Phase 2 step 6). Do NOT use to issue new customer licences (send the user to the Freemius dashboard), for signature rules (ironveil-signature-update), or for changing licensing code.
 ---
 
 # IronVeil license
