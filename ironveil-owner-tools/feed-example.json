@@ -1,0 +1,27 @@
+{
+  "version": 1,
+  "php": [
+    {
+      "id": "example_wp_vcd_loader",
+      "severity": 4,
+      "description": "WP-VCD malware loader",
+      "pattern": "wp_cd_code|\\$tmpcontent\\s*=\\s*@file_get_contents\\s*\\(\\s*[\"']https?://"
+    },
+    {
+      "id": "example_fake_plugin_header",
+      "severity": 3,
+      "description": "Fake plugin header used by backdoors",
+      "pattern": "Plugin Name:\\s*(?:WP-Security-Patch|Wordpress Core Update)"
+    }
+  ],
+  "js": [
+    {
+      "id": "example_balada_domain",
+      "severity": 4,
+      "description": "Balada Injector domain",
+      "pattern": "(?:dest\\.collectfasttracks|cdn\\.statisticline)\\.com"
+    }
+  ],
+  "config": [],
+  "filenames": [ "wp-vcd.php", "class.plugin-modules.php" ]
+}
