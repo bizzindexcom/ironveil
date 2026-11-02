@@ -59,6 +59,12 @@ Four fixes have already gone through this loop during testing (see each CHANGELO
 | SECURITY.md version table | Written by Claude | The table (5.1.x / 4.0.x) matches GitHub's sample SECURITY.md and doesn't describe IronVeil. Proposed fix: 1.2.x supported, older versions not. Waiting for your OK. |
 | Weekly volume | Depends on downloads | Ranking switched to risk until launch |
 
+## 6b. Decisions (2026-11-02)
+
+- **Freemius** handles licences, payments, subscriptions and Pro updates. Plan: `docs/license-automation.md`.
+- **Automatic signature updates stay** through IronVeil's own signed feed, so `DEFAULT_FEED_URL` is still required (the release check keeps failing without it), and the feed key must stay offline and be rotated.
+- `ironveil-license` is now legacy: only for migrating customers who already have `IVL1` keys.
+
 ## 7. Biggest risk before wordpress.org
 
 Guideline 5 of the wordpress.org plugin guidelines says trialware isn't allowed: a plugin there may not ship features that are locked until someone pays. IronVeil 1.2.x ships its Pro features inside the plugin and unlocks them with a key (`Settings::get()` + `License::PRO_SETTINGS`); your own README flags this too. Expect the review to reject it in this form. The usual fix is two plugins: a free one on wordpress.org, and a separate Pro add-on sold from your site that contains the Pro code. That is a design decision for you; no skill changes it.

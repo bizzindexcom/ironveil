@@ -13,7 +13,7 @@ One job: get a new detection into the plugin or the feed, validated, without fal
 3. Write the rule. Feed rule shape (see `ironveil-owner-tools/feed-example.json`): `id` `^[a-z0-9_]{3,40}$`, `severity` 1–4 (4 = critical), `description`, `pattern` ≤ 2000 chars. Filenames go in `filenames`, lowercase basenames.
 4. Test it: `php .claude/skills/ironveil-signature-update/scripts/test_pattern.php '<pattern>' <malicious-sample> [clean-files-or-dirs...]`. It must hit the sample and miss clean WordPress/plugin files (run it on the plugin folder itself at minimum).
 5. Built-in: edit `includes/class-signatures.php` and raise `const VERSION` by 1. Feed: raise the feed `version` by 1 (lower versions are refused as rollbacks).
-6. Feed only: the user signs on their own machine with IronVeil Keygen → **Sign revocation feed…**, or `php ironveil-owner-tools/ironveil-sign.php sign rules.json <.protected.key> > signatures.json`. The feed keeps rules AND `revoked_licenses` (each feed replaces the last), and expires after 90 days: remind the user to re-sign before then. You never read, request or store the secret key.
+6. Feed only: the user signs on their own machine with IronVeil Keygen → **Sign revocation feed…**, or `php ironveil-owner-tools/ironveil-sign.php sign rules.json <.protected.key> > signatures.json`. Each feed replaces the last, so it must contain every rule. `revoked_licenses` is no longer used once licences move to Freemius, and expires after 90 days: remind the user to re-sign before then. You never read, request or store the secret key.
 7. Uploading the feed or pushing is the user's action, after their OK.
 
 ## Rules

@@ -1,73 +1,61 @@
-# Automatic license delivery for paid and monthly customers
+# Licensing and signature updates: plan
 
-Status: proposal, not built. Needs your decisions (bottom of this page) before any code is written.
+**Decision (2026-11-02):** Freemius handles licences, payments, subscriptions and Pro updates. IronVeil keeps its own Ed25519-signed signature feed for automatic malware-signature updates.
 
-## The problem
+## Who does what
 
-Issuing a key means signing it with the owner private key. To issue keys automatically, a server must sign them. In IronVeil 1.3.3, **one key signs everything**:
+| Job | Done by | Key |
+|---|---|---|
+| Checkout, payments, monthly and yearly subscriptions, refunds | Freemius | Freemius account (online, theirs) |
+| Licence keys, activation, expiry, cancellation | Freemius | — |
+| Updates for the Pro version | Freemius | — |
+| Malware signature updates (Pro) | Your feed (`signatures.json`) | **Feed key**: your current owner key, offline in IronVeil Keygen |
+| Revoking licences | Freemius dashboard | — (`revoked_licenses` in the feed is no longer used) |
 
-| Signed with the owner key | What an attacker who steals it can do |
-|---|---|
-| License keys | Create unlimited Pro keys, including `owner` keys valid on every site |
-| Signature feeds | Push detection rules to every Pro site. On sites with *automatic quarantine* turned on, a rule that matches normal plugin files would quarantine them and break those sites |
-| Revocations | Revoke every real customer |
+Your signing key no longer issues licences. It signs only the feed, which keeps it offline for good: no server ever needs it.
 
-So that key must never sit on an internet-facing server. The Windows keygen and the owner-tools README both say the same.
+## Phase 0: before launch (independent of Freemius)
 
-## Recommended design
+1. **Rotate the feed key.** It was generated outside your computer and was uploaded to a cloud session on 2026-11-02.
+   1. In IronVeil Keygen, use **Create new key pair…**.
+   2. Put the new public key in `License::PUBLIC_KEY` (renamed to `FEED_PUBLIC_KEY` in Phase 2).
+   3. Retire the old key.
+2. **Set `License::DEFAULT_FEED_URL`** to the https:// address that will host `signatures.json`. The release check fails distribution builds until this is set.
+3. **Publish the first feed**, signed with the new key. Re-sign and upload at least every 90 days, or sites stop accepting it as stale.
 
-### 1. Split the key (plugin change, IronVeil 1.4.0)
+## Phase 1: Freemius setup (you, in the Freemius dashboard)
 
-- **Feed key (offline).** This is today's owner key, kept in the Windows keygen. It signs feeds and revocations only.
-- **License key (online).** A new key that lives only in the license server's secret store. It signs licenses only.
-- The plugin limits what the online key can sign. It accepts only `paid` licenses, refuses `*` (any site), and refuses expiry beyond 400 days.
-- If the online key leaks, an attacker can create normal paid keys, and nothing else. You ship a release with a new online public key; the feeds stay safe.
+1. Create the product IronVeil Security as a freemium plugin with your plans (monthly and yearly).
+2. Give me the **product ID** and the **public key** Freemius shows you. Both are public.
+   - Never share the Freemius **secret key**; it stays in their dashboard and your own deploy settings.
+3. Decide whether customers can use a free trial of Pro, and how many sites each plan covers.
 
-### 2. License server (small, serverless)
+## Phase 2: plugin changes (IronVeil 1.4.0, I can build these)
 
-```
-Customer pays ──► Payment provider ──webhook──► /webhook (your function)
-                  (Lemon Squeezy, Paddle,          1. verify the webhook signature
-                   Stripe or WooCommerce)          2. ignore an order id it has already seen
-                                                   3. read the domain from the checkout field
-                                                   4. sign the key with the ONLINE key
-                                                   5. save {order, customer, license id, expiry}
-                                                   6. email the key (Postmark, Resend or SES)
-```
+1. **Add the Freemius SDK.** Initialise it in `ironveil-security.php`. Usage tracking stays off until the user opts in.
+2. **Swap the Pro check.** All gating already goes through `License::is_pro()` (via `Settings::get()` and `License::PRO_SETTINGS`), so it becomes one Freemius check:
+   - Pro code is marked so that Freemius's deployment strips it from the free build. That build is the wordpress.org version, so it ships no locked features.
+3. **Remove the `IVL1` licence system:**
+   - `License::verify()`, `activate()` and the domain checks
+   - the Upgrade to Pro → Activate page
+   - `wp ironveil license`
+   - `ironveil-owner-tools/ironveil-license.php`
+   - the revocation code in `Signature_Feed`
+4. **Keep the feed.**
+   - `Signature_Feed` stays Pro-only and is verified with the feed key.
+   - `revoked_licenses` is ignored.
+5. **Disclose Freemius** in the readme.txt *External services* section: what is sent, when (opt-in) and their privacy policy link.
+6. **Existing customers.** Before removing `IVL1`, create a matching Freemius licence for every key in `licenses-issued.csv` and the keygen's `issued-licenses.jsonl`, and send it to each customer. Your lifetime owner key goes away with `IVL1`.
 
-- Ask for the site domain at checkout as a required custom field, and validate it like the keygen does (host only, punycode).
-- Secrets go in the platform's secret store (environment secrets): the online signing key, the webhook secret and the email API key. Never put them in the repository.
-- Keep a log of every key issued, as you do today with `licenses-issued.csv`.
+## Phase 3: release
 
-### 3. Monthly subscriptions: short keys that refresh themselves
+- **Free version:** the build Freemius generates, submitted to wordpress.org.
+- **Pro version:** delivered and updated by Freemius.
+- Run `ironveil-release` on the source before deploying to Freemius.
 
-- Each key is valid until the end of the paid period plus 7 days' grace.
-- The Pro plugin asks the license server once a day for the current key: `GET /v1/refresh?id=<license id>&domain=<site>`. While the subscription is paid, the server returns a fresh key; after a cancellation it returns nothing.
-- The plugin still checks every key's signature locally, so the server can only hand out keys, not change what the plugin trusts.
-- Cancelled or failed payments need no revocation: the key simply runs out. Revocation through the offline feed stays for leaks and refunds.
-- Yearly and lifetime purchases get one key at purchase and don't use refresh.
+## What I need from you
 
-### 4. WordPress.org
-
-- That daily check is a "phone home", and the Pro gating is trialware. Both rule the current build out of WordPress.org (see `docs/IronVeil-Security-Guide.md`, Part B).
-- The usual setup: a free plugin on WordPress.org, and a **Pro add-on** sold from jeemplugins.com that contains the Pro features, the license check and the refresh client. Disclose the refresh request in the add-on's readme.
-
-### Ready-made alternative
-
-**Freemius** is a hosted licensing and subscription service built for WordPress plugins. It handles checkout, license keys, subscriptions, refunds, automatic updates and a WordPress.org-compliant free plus premium setup. You trade a revenue share and their SDK inside your plugin for not running a license server.
-
-## Before any automation
-
-1. **Rotate the owner key.** It was generated outside your computer (the v1.2.0 notes say it was delivered to you in a zip), and it was uploaded to this cloud session on 2026-11-02. Treat it as no longer offline-only:
-   1. Create a new pair in IronVeil Keygen → **Create new key pair…**, on your PC.
-   2. Paste the new public key into `License::PUBLIC_KEY`.
-   3. Release a new version.
-   4. Re-issue the keys you have already given out, including your own owner key.
-2. **Set `License::DEFAULT_FEED_URL`.** It is empty, so no revocation reaches any site today. A leaked key can't be revoked, only replaced through a new release.
-
-## Decisions needed
-
-1. Payment provider: Lemon Squeezy, Paddle, Stripe, WooCommerce, or Freemius?
-2. Where the license server runs: for example Vercel or Cloudflare Workers.
-3. Grace period after a missed payment (proposed: 7 days).
-4. Whether to build the key split and refresh client (plugin 1.4.0) now.
+1. The feed URL (Phase 0, step 2).
+2. Confirmation once the feed key is rotated.
+3. The Freemius product ID and public key, and your plans (Phase 1).
+4. Confirmation that the current Pro feature list (`License::PRO_SETTINGS`) is still what you want behind Pro.

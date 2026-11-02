@@ -1,11 +1,11 @@
 ---
 name: ironveil-license
-description: Prepare, inspect or revoke IronVeil Pro license keys (IVL1.… keys signed with the author's offline Ed25519 key) using the IronVeil Keygen Windows app or ironveil-owner-tools/ironveil-license.php. Use when the user asks to issue a license for a customer or domain, give someone complimentary Pro, check what a license key contains, or revoke a key. Do NOT use for signature rules (ironveil-signature-update) or for changing how licensing works in class-license.php.
+description: Prepare, inspect or revoke IronVeil Pro license keys (IVL1.… keys signed with the author's offline Ed25519 key) using the IronVeil Keygen Windows app or ironveil-owner-tools/ironveil-license.php. LEGACY: since 2026-11-02 new licences come from Freemius. Use only to inspect or replace IVL1 keys already issued (migration to Freemius, docs/license-automation.md Phase 2 step 6). Do NOT use to issue new customer licences (send the user to the Freemius dashboard), for signature rules (ironveil-signature-update), or for changing licensing code.
 ---
 
 # IronVeil license
 
-One job: give the user the exact command for a key, and read keys. The user runs anything that needs the private key.
+One job: read existing IVL1 keys and help migrate those customers to Freemius. New sales, renewals, cancellations and refunds are handled in Freemius. The user runs anything that needs the private key.
 
 ## Steps
 1. Collect: customer name, domain(s), type (`paid`, `complimentary`, `owner`), days (paid only). Ask for anything missing; never default a domain.

@@ -6,3 +6,4 @@ One line per change: date — correction (quoted) — what changed.
 - 2026-10-27 — Test run: the tool already rejects schemes/paths; step 2 narrowed to the *.domain vs domain question.
 - 2026-10-31 — Fixed my own wrong rule: `*.shop.com` covers the apex too (checked in `License::domain_allowed()`).
 - 2026-11-02 — 1.3.x: paths moved to ironveil-owner-tools/, Windows keygen added as the preferred tool; never open uploaded owner kits.
+- 2026-11-02 — User chose Freemius: skill narrowed to legacy IVL1 keys and their migration; new licences come from Freemius.
